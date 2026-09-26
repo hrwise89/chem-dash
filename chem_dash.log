@@ -1,59 +1,41 @@
-15:38:34 [INFO] chem_dash: Opening ReactionBenchView from bench 'bench_hood_1'
-15:38:36 [DEBUG] chem_dash: Bench: entered 'equipment' section
-15:38:44 [DEBUG] chem_dash: Bench: back to overview from 'equipment'
-15:38:45 [DEBUG] chem_dash: Bench: entered 'recipes' section
-15:38:47 [DEBUG] chem_dash: Bench: back to overview from 'recipes'
-15:38:48 [DEBUG] chem_dash: Bench: entered 'notebook' section
-15:38:49 [DEBUG] chem_dash: Bench: back to overview from 'notebook'
-15:38:49 [DEBUG] chem_dash: Bench: entered 'inventory' section
-15:38:50 [DEBUG] chem_dash: Bench: back to overview from 'inventory'
-15:38:51 [DEBUG] chem_dash: Bench: entered 'inventory' section
-15:38:53 [DEBUG] chem_dash: Bench: back to overview from 'inventory'
-15:38:54 [DEBUG] chem_dash: Bench: entered 'equipment' section
-15:38:55 [DEBUG] chem_dash: Bench: back to overview from 'equipment'
-15:38:56 [DEBUG] chem_dash: Bench: entered 'recipes' section
-15:38:57 [DEBUG] chem_dash: start_reaction: matched 'HBr + ethanol → ethyl bromide' for reagents {'HBr': 1.0, 'ethanol': 1.0}
-15:38:57 [DEBUG] chem_dash: start_reaction: reserved equipment ['rb_flask_1', 'condenser_4', 'tubing_7', 'heating_mantle_10', 'stir_bar_13', 'magnetic_stirrer_16'] for 'HBr + ethanol → ethyl bromide'
-15:38:57 [INFO] chem_dash: Started 'HBr + ethanol → ethyl bromide' (proc_1): condition_score=1.00, ready at t=4.07h
-15:38:59 [INFO] chem_dash: Warped game clock to t=4.07h for 'HBr + ethanol → ethyl bromide'
-15:39:01 [INFO] chem_dash: Collected 'HBr + ethanol → ethyl bromide' (proc_1): {'ethyl bromide (crude)': 1.0, 'water': 1.0}; released equipment ['rb_flask_1', 'condenser_4', 'tubing_7', 'heating_mantle_10', 'stir_bar_13', 'magnetic_stirrer_16']
-15:39:02 [DEBUG] chem_dash: Bench: back to overview from 'notebook'
-15:39:03 [DEBUG] chem_dash: Bench: entered 'inventory' section
-15:39:05 [DEBUG] chem_dash: Bench: back to overview from 'inventory'
-15:39:06 [DEBUG] chem_dash: Bench: entered 'equipment' section
-15:39:07 [DEBUG] chem_dash: Bench: back to overview from 'equipment'
-15:39:08 [DEBUG] chem_dash: Bench: entered 'recipes' section
-15:39:08 [WARNING] chem_dash: start_reaction rejected: not enough ethyl bromide (need 1.00 mol, have 0.00 mol)
-15:39:17 [DEBUG] chem_dash: Bench: back to overview from 'recipes'
-15:39:18 [DEBUG] chem_dash: Bench: entered 'notebook' section
-15:39:19 [DEBUG] chem_dash: Bench: back to overview from 'notebook'
-15:39:20 [DEBUG] chem_dash: Bench: entered 'inventory' section
-15:39:24 [DEBUG] chem_dash: Bench: back to overview from 'inventory'
-15:39:25 [DEBUG] chem_dash: Bench: entered 'equipment' section
-15:39:27 [DEBUG] chem_dash: Bench: back to overview from 'equipment'
-15:39:28 [DEBUG] chem_dash: Bench: entered 'recipes' section
-15:39:30 [DEBUG] chem_dash: start_reaction: matched 'HBr + ethanol → ethyl bromide' for reagents {'HBr': 1.0, 'ethanol': 1.0}
-15:39:30 [DEBUG] chem_dash: start_reaction: reserved equipment ['rb_flask_1', 'condenser_4', 'tubing_7', 'heating_mantle_10', 'stir_bar_13', 'magnetic_stirrer_16'] for 'HBr + ethanol → ethyl bromide'
-15:39:30 [INFO] chem_dash: Started 'HBr + ethanol → ethyl bromide' (proc_2): condition_score=1.00, ready at t=8.07h
-15:39:31 [DEBUG] chem_dash: Bench: 'HBr + ethanol → ethyl bromide' not ready (4.00h remaining)
-15:39:31 [INFO] chem_dash: Warped game clock to t=8.07h for 'HBr + ethanol → ethyl bromide'
-15:39:32 [INFO] chem_dash: Collected 'HBr + ethanol → ethyl bromide' (proc_2): {'ethyl bromide (crude)': 1.0, 'water': 1.0}; released equipment ['rb_flask_1', 'condenser_4', 'tubing_7', 'heating_mantle_10', 'stir_bar_13', 'magnetic_stirrer_16']
-15:39:33 [DEBUG] chem_dash: Bench: back to overview from 'notebook'
-15:39:35 [DEBUG] chem_dash: Bench: entered 'notebook' section
-15:39:35 [DEBUG] chem_dash: Bench: back to overview from 'notebook'
-15:39:36 [DEBUG] chem_dash: Bench: entered 'inventory' section
-15:39:37 [DEBUG] chem_dash: Bench: back to overview from 'inventory'
-15:39:37 [DEBUG] chem_dash: Bench: entered 'recipes' section
-15:39:39 [WARNING] chem_dash: start_reaction rejected: not enough ethyl bromide (need 1.00 mol, have 0.00 mol)
-15:39:40 [DEBUG] chem_dash: start_reaction: matched 'HBr + ethanol → ethyl bromide' for reagents {'HBr': 1.0, 'ethanol': 1.0}
-15:39:40 [DEBUG] chem_dash: start_reaction: reserved equipment ['rb_flask_1', 'condenser_4', 'tubing_7', 'heating_mantle_10', 'stir_bar_13', 'magnetic_stirrer_16'] for 'HBr + ethanol → ethyl bromide'
-15:39:40 [INFO] chem_dash: Started 'HBr + ethanol → ethyl bromide' (proc_3): condition_score=1.00, ready at t=12.07h
-15:39:42 [DEBUG] chem_dash: Bench: back to overview from 'notebook'
-15:39:43 [DEBUG] chem_dash: Bench: entered 'recipes' section
-15:39:43 [DEBUG] chem_dash: start_reaction: matched 'HBr + ethanol → ethyl bromide' for reagents {'HBr': 1.0, 'ethanol': 1.0}
-15:39:43 [DEBUG] chem_dash: start_reaction: reserved equipment ['rb_flask_2', 'condenser_5', 'tubing_8', 'heating_mantle_11', 'stir_bar_14', 'magnetic_stirrer_17'] for 'HBr + ethanol → ethyl bromide'
-15:39:43 [INFO] chem_dash: Started 'HBr + ethanol → ethyl bromide' (proc_4): condition_score=1.00, ready at t=12.07h
-15:39:44 [DEBUG] chem_dash: Bench: back to overview from 'notebook'
-15:39:45 [DEBUG] chem_dash: Bench: entered 'notebook' section
-15:39:46 [DEBUG] chem_dash: Bench: back to overview from 'notebook'
-15:39:48 [DEBUG] chem_dash: Bench: left the bench, returning to lab floor
+16:36:49 [INFO] chem_dash: Opening ReactionBenchView from bench 'bench_hood_1'
+16:36:52 [DEBUG] chem_dash: Reaction bench: entered 'notebook' section
+16:36:55 [DEBUG] chem_dash: Reaction bench: back to overview from 'notebook'
+16:36:58 [DEBUG] chem_dash: Reaction bench: entered 'equipment' section
+16:37:01 [DEBUG] chem_dash: Reaction bench: back to overview from 'equipment'
+16:37:05 [DEBUG] chem_dash: Reaction bench: entered 'inventory' section
+16:37:06 [DEBUG] chem_dash: Reaction bench: back to overview from 'inventory'
+16:37:07 [DEBUG] chem_dash: Reaction bench: left the bench, returning to lab floor
+16:37:10 [INFO] chem_dash: Opening PurifyBenchView from bench 'bench_col_1'
+16:37:12 [DEBUG] chem_dash: Purify bench: left the bench, returning to lab floor
+16:37:15 [INFO] chem_dash: Opening ReactionBenchView from bench 'bench_hood_1'
+16:37:19 [DEBUG] chem_dash: Reaction bench: entered 'recipes' section
+16:37:20 [DEBUG] chem_dash: start_reaction: matched 'HBr + ethanol → ethyl bromide' for reagents {'HBr': 1.0, 'ethanol': 1.0}
+16:37:20 [DEBUG] chem_dash: start_reaction: reserved equipment ['rb_flask_1', 'condenser_4', 'tubing_7', 'heating_mantle_10', 'stir_bar_13', 'magnetic_stirrer_16'] for 'HBr + ethanol → ethyl bromide'
+16:37:20 [INFO] chem_dash: Started 'HBr + ethanol → ethyl bromide' (proc_1): condition_score=1.00, ready at t=4.34h
+16:37:22 [DEBUG] chem_dash: Reaction bench: back to overview from 'notebook'
+16:37:24 [DEBUG] chem_dash: Reaction bench: entered 'recipes' section
+16:37:24 [DEBUG] chem_dash: start_reaction: matched 'HBr + ethanol → ethyl bromide' for reagents {'HBr': 1.0, 'ethanol': 1.0}
+16:37:24 [DEBUG] chem_dash: start_reaction: reserved equipment ['rb_flask_2', 'condenser_5', 'tubing_8', 'heating_mantle_11', 'stir_bar_14', 'magnetic_stirrer_17'] for 'HBr + ethanol → ethyl bromide'
+16:37:24 [INFO] chem_dash: Started 'HBr + ethanol → ethyl bromide' (proc_2): condition_score=1.00, ready at t=4.34h
+16:37:27 [INFO] chem_dash: Warped game clock to t=4.34h for 'HBr + ethanol → ethyl bromide'
+16:37:29 [INFO] chem_dash: Collected 'HBr + ethanol → ethyl bromide' (proc_1): {'ethyl bromide (crude)': 1.0, 'water': 1.0}; released equipment ['rb_flask_1', 'condenser_4', 'tubing_7', 'heating_mantle_10', 'stir_bar_13', 'magnetic_stirrer_16']
+16:37:30 [INFO] chem_dash: Collected 'HBr + ethanol → ethyl bromide' (proc_2): {'ethyl bromide (crude)': 1.0, 'water': 1.0}; released equipment ['rb_flask_2', 'condenser_5', 'tubing_8', 'heating_mantle_11', 'stir_bar_14', 'magnetic_stirrer_17']
+16:37:31 [DEBUG] chem_dash: Reaction bench: back to overview from 'notebook'
+16:37:32 [DEBUG] chem_dash: Reaction bench: entered 'recipes' section
+16:37:33 [WARNING] chem_dash: start_reaction rejected: not enough ethyl bromide (need 1.00 mol, have 0.00 mol)
+16:37:35 [DEBUG] chem_dash: Reaction bench: back to overview from 'recipes'
+16:37:37 [DEBUG] chem_dash: Reaction bench: left the bench, returning to lab floor
+16:37:40 [INFO] chem_dash: Opening PurifyBenchView from bench 'bench_col_1'
+16:37:41 [DEBUG] chem_dash: Purify bench: entered Auto Purify picker
+16:37:42 [INFO] chem_dash: Auto-purified 2.00 mol ethyl bromide (crude) -> 1.82 mol ethyl bromide (90.9% yield), +0.25h
+16:37:44 [DEBUG] chem_dash: Purify bench: left the bench, returning to lab floor
+16:37:47 [INFO] chem_dash: Opening ReactionBenchView from bench 'bench_hood_1'
+16:37:49 [DEBUG] chem_dash: Reaction bench: entered 'recipes' section
+16:37:50 [DEBUG] chem_dash: start_reaction: matched 'sodium cyanide + ethyl bromide → ethyl cyanide' for reagents {'sodium cyanide': 1.0, 'ethyl bromide': 1.0}
+16:37:50 [DEBUG] chem_dash: start_reaction: reserved equipment ['rb_flask_1', 'condenser_4', 'tubing_7', 'heating_mantle_10', 'stir_bar_13', 'magnetic_stirrer_16'] for 'sodium cyanide + ethyl bromide → ethyl cyanide'
+16:37:50 [INFO] chem_dash: Started 'sodium cyanide + ethyl bromide → ethyl cyanide' (proc_3): condition_score=1.00, ready at t=8.90h
+16:37:52 [INFO] chem_dash: Warped game clock to t=8.90h for 'sodium cyanide + ethyl bromide → ethyl cyanide'
+16:37:54 [INFO] chem_dash: Collected 'sodium cyanide + ethyl bromide → ethyl cyanide' (proc_3): {'ethyl cyanide (crude)': 1.0, 'sodium bromide': 1.0}; released equipment ['rb_flask_1', 'condenser_4', 'tubing_7', 'heating_mantle_10', 'stir_bar_13', 'magnetic_stirrer_16']
+16:37:56 [DEBUG] chem_dash: Reaction bench: back to overview from 'notebook'
+16:37:58 [DEBUG] chem_dash: Reaction bench: left the bench, returning to lab floor

@@ -2,8 +2,8 @@ import arcade
 import math
 from settings import (SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE, SPRITE_SCALING, TILE_SIZE,
 	GRID_WIDTH, GRID_HEIGHT, PLAYER_COLOR, MAP_BACKGROUND_COLOR, GAME_HOURS_PER_REAL_SECOND)
-from mini_games.column import ColumnMiniGameView
-from mini_games.bench import ReactionBenchView
+from benches.purify_bench import PurifyBenchView
+from benches.reaction_bench import ReactionBenchView
 from timer_manager import TimerManager, Timer
 from devtools import logger
 
@@ -116,12 +116,12 @@ class LabView(arcade.View):
 		# Benches
 		bench_specs = [
 			{"name": "bench_col_1", "x": TILE_SIZE * 12.5, "y": TILE_SIZE * 16.5,
-				"width": TILE_SIZE * 3, "height": TILE_SIZE, 
-				"color": arcade.color.BROWN, "mini_game": "view your columns",
-				"opens": ColumnMiniGameView},
+				"width": TILE_SIZE * 3, "height": TILE_SIZE,
+				"color": arcade.color.BROWN, "action": "purify your products",
+				"opens": PurifyBenchView},
 			{"name": "bench_hood_1", "x": TILE_SIZE * 6.5, "y": TILE_SIZE * 16.5,
 				"width": TILE_SIZE * 3, "height": TILE_SIZE, 
-				"color": arcade.color.DARK_GRAY, "mini_game": "view your hood",
+				"color": arcade.color.DARK_GRAY, "action": "view your hood",
 				"opens": ReactionBenchView},	
 			# Additional benches here
 		]
@@ -158,7 +158,7 @@ class LabView(arcade.View):
 		# repositioned/retexted here, rather than rebuilt every frame)
 		if self.near_bench:
 			bench = self.benches[self.near_bench["name"]]
-			self.prompt_text.text = f"Press SPACE to {self.near_bench['mini_game']}"
+			self.prompt_text.text = f"Press SPACE to {self.near_bench['action']}"
 			self.prompt_text.x = bench.center_x
 			self.prompt_text.y = bench.center_y + 40
 			self.prompt_text.draw()

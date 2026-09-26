@@ -4,3 +4,6 @@ __pycache__/
 
 # Dev-mode log output (devtools.py) -- local runtime data, not source
 chem_dash.log
+
+# macOS Finder metadata
+.DS_Store
