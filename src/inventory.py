@@ -16,6 +16,7 @@ Two kinds of inventory:
 """
 
 import itertools
+import json
 from dataclasses import dataclass
 
 # ===============================================================
@@ -142,3 +143,56 @@ class EquipmentInventory:
 
     def __repr__(self):
         return f"EquipmentInventory({list(self.items.values())})"
+
+
+# ===============================================================
+# Loading inventories from data (starting loadouts, and later saves)
+# ===============================================================
+#
+# Both loaders below take an already-parsed dict/list, not a file path.
+# That's the piece meant to carry forward into a future save system: a
+# starting-loadout file and a save file will assemble this dict differently
+# (a save adds each equipment item's "id" and "in_use" to preserve identity
+# and reservation state across a load), but both can hand off to the same
+# "build an inventory from this shape" logic here.
+
+def chemical_inventory_from_dict(data: dict) -> ChemicalInventory:
+    """Build a ChemicalInventory from a {chemical_name: moles} mapping."""
+    inventory = ChemicalInventory()
+    for name, amount in data.items():
+        inventory.add(name, amount)
+    return inventory
+
+
+def equipment_inventory_from_dict(data: list) -> EquipmentInventory:
+    """
+    Build an EquipmentInventory from a list of item dicts, each with at
+    least "type" and "name". "capacity" is optional (only vessels like
+    rb_flask need it). "id" and "in_use" are also optional -- a starting
+    loadout can omit them (fresh equipment, nothing reserved yet, ids
+    auto-assigned), while a save file would include both to restore exact
+    identity and in-progress reservations.
+    """
+    inventory = EquipmentInventory()
+    for entry in data:
+        item = inventory.add_item(
+            type_=entry["type"],
+            name=entry["name"],
+            capacity=entry.get("capacity"),
+            item_id=entry.get("id"),
+        )
+        item.in_use = entry.get("in_use", False)
+    return inventory
+
+
+def load_starting_inventories(path: str) -> tuple[ChemicalInventory, EquipmentInventory]:
+    """
+    Load the player's default starting chemicals + equipment from a JSON
+    file shaped like:
+        {"chemicals": {"HBr": 2.0, ...}, "equipment": [{"type": ..., "name": ...}, ...]}
+    """
+    with open(path, "r") as f:
+        data = json.load(f)
+    chemicals = chemical_inventory_from_dict(data.get("chemicals", {}))
+    equipment = equipment_inventory_from_dict(data.get("equipment", []))
+    return chemicals, equipment

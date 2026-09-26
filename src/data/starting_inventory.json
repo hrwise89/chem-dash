@@ -1,0 +1,14 @@
+{
+  "chemicals": {
+    "HBr": 2.0,
+    "ethanol": 2.0
+  },
+  "equipment": [
+    {"type": "rb_flask", "name": "250 mL RB Flask", "capacity": 2.0},
+    {"type": "condenser", "name": "Reflux Condenser"},
+    {"type": "tubing", "name": "Rubber Tubing"},
+    {"type": "heating_mantle", "name": "Heating Mantle"},
+    {"type": "stir_bar", "name": "Stir Bar"},
+    {"type": "magnetic_stirrer", "name": "Magnetic Stirrer"}
+  ]
+}

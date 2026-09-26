@@ -3,8 +3,10 @@ import math
 from settings import (SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE, SPRITE_SCALING, TILE_SIZE, 
 	GRID_WIDTH, GRID_HEIGHT, PLAYER_COLOR, MAP_BACKGROUND_COLOR)
 from mini_games.column import ColumnMiniGameView
-from mini_games.bench import ReactionMiniGameView
+from mini_games.bench import ReactionBenchView
 from timer_manager import TimerManager, Timer
+
+DEFAULT_X, DEFAULT_Y = GRID_HEIGHT * 3.5 // 4, GRID_WIDTH * 1 // 4
 
 class Player(arcade.Sprite):
 	def __init__(self, row: int, col: int, color: tuple[int,int,int] = PLAYER_COLOR):
@@ -18,6 +20,7 @@ class Player(arcade.Sprite):
 		self.center_x = self.target_x
 		self.center_y = self.target_y
 		self.moving = False
+		self.near_bench = False
 
 	def move(self, d_row: int, d_col: int, collidables: list) -> None:
 		new_row = max(0, min(self.row + d_row, GRID_HEIGHT - 1))
@@ -82,7 +85,7 @@ class LabView(arcade.View):
 		self.time_since_move = 0.0
 
 		# Player
-		self.player = Player(GRID_HEIGHT // 2, GRID_WIDTH // 2)
+		self.player = Player(DEFAULT_X, DEFAULT_Y)
 		self.all_sprites = arcade.SpriteList()
 		self.all_sprites.append(self.player)
 		
@@ -114,7 +117,7 @@ class LabView(arcade.View):
 			{"name": "bench_hood_1", "x": TILE_SIZE * 6.5, "y": TILE_SIZE * 16.5,
 				"width": TILE_SIZE * 3, "height": TILE_SIZE, 
 				"color": arcade.color.DARK_GRAY, "mini_game": "view your hood",
-				"opens": ReactionMiniGameView},	
+				"opens": ReactionBenchView},	
 			# Additional benches here
 		]
 		self.near_bench = None
