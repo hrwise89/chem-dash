@@ -287,6 +287,98 @@ class TestReactionEngine(unittest.TestCase):
             for name, amount in definition.reactants.items():
                 self.assertAlmostEqual(batch[name], amount, places=6)
 
+    # --- Multiple equipment of the same type ---
+    def test_two_reactions_run_concurrently_with_duplicate_equipment(self):
+        # This is the whole point of owning more than one of each item --
+        # two full rigs free at once should let two batches run side by
+        # side, each getting its own equipment set.
+        # Enough chemicals for 3 batches, so the 3rd start_reaction below
+        # fails on equipment specifically, not on running out of reagent.
+        inventory = self.make_inventory(HBr=3.0, ethanol=3.0)
+        equipment = EquipmentInventory()
+        make_full_rig(equipment)  # rig #1
+        make_full_rig(equipment)  # rig #2
+
+        process_a = self.engine.start_reaction(
+            inventory, equipment, {"HBr": 1.0, "ethanol": 1.0}, "neat", 20.0, 4.0, self.clock
+        )
+        process_b = self.engine.start_reaction(
+            inventory, equipment, {"HBr": 1.0, "ethanol": 1.0}, "neat", 20.0, 4.0, self.clock
+        )
+        self.assertNotEqual(process_a.process_id, process_b.process_id)
+        self.assertTrue(set(process_a.equipment_ids).isdisjoint(process_b.equipment_ids),
+                         "the two reactions should not share any physical equipment item")
+
+        # A third attempt with no equipment left should still fail cleanly
+        with self.assertRaises(EquipmentUnavailableError):
+            self.engine.start_reaction(
+                inventory, equipment, {"HBr": 1.0, "ethanol": 1.0}, "neat", 20.0, 4.0, self.clock
+            )
+
+    # --- Dev-mode logging: confirm key events actually emit, at the levels
+    # the on-screen messages are supposed to mirror ---
+    def test_successful_start_logs_info(self):
+        inventory = self.make_inventory(HBr=1.0, ethanol=1.0)
+        equipment = EquipmentInventory()
+        make_full_rig(equipment)
+
+        with self.assertLogs("chem_dash", level="INFO") as log:
+            self.engine.start_reaction(
+                inventory, equipment, {"HBr": 1.0, "ethanol": 1.0}, "neat", 20.0, 4.0, self.clock
+            )
+        self.assertTrue(any("Started" in message for message in log.output))
+
+    def test_insufficient_chemicals_logs_warning(self):
+        inventory = self.make_inventory(HBr=0.5, ethanol=1.0)
+        equipment = EquipmentInventory()
+        make_full_rig(equipment)
+
+        with self.assertLogs("chem_dash", level="WARNING") as log:
+            with self.assertRaises(ValueError):
+                self.engine.start_reaction(
+                    inventory, equipment, {"HBr": 1.0, "ethanol": 1.0}, "neat", 20.0, 4.0, self.clock
+                )
+        self.assertTrue(any("not enough" in message.lower() for message in log.output))
+
+    def test_missing_equipment_logs_warning(self):
+        inventory = self.make_inventory(HBr=1.0, ethanol=1.0)
+        equipment = EquipmentInventory()  # nothing added
+
+        with self.assertLogs("chem_dash", level="WARNING") as log:
+            with self.assertRaises(EquipmentUnavailableError):
+                self.engine.start_reaction(
+                    inventory, equipment, {"HBr": 1.0, "ethanol": 1.0}, "neat", 20.0, 4.0, self.clock
+                )
+        self.assertTrue(any("missing/busy equipment" in message.lower() for message in log.output))
+
+    def test_successful_collect_logs_info(self):
+        inventory = self.make_inventory(HBr=1.0, ethanol=1.0)
+        equipment = EquipmentInventory()
+        make_full_rig(equipment)
+
+        process = self.engine.start_reaction(
+            inventory, equipment, {"HBr": 1.0, "ethanol": 1.0}, "neat", 20.0, 4.0, self.clock
+        )
+        self.clock.advance_to(process.end_time)
+
+        with self.assertLogs("chem_dash", level="INFO") as log:
+            self.engine.collect_reaction(process.process_id, inventory, equipment, self.clock)
+        self.assertTrue(any("Collected" in message for message in log.output))
+
+    def test_collect_too_early_logs_warning(self):
+        inventory = self.make_inventory(HBr=1.0, ethanol=1.0)
+        equipment = EquipmentInventory()
+        make_full_rig(equipment)
+
+        process = self.engine.start_reaction(
+            inventory, equipment, {"HBr": 1.0, "ethanol": 1.0}, "neat", 20.0, 4.0, self.clock
+        )
+
+        with self.assertLogs("chem_dash", level="WARNING") as log:
+            with self.assertRaises(ReactionNotReadyError):
+                self.engine.collect_reaction(process.process_id, inventory, equipment, self.clock)
+        self.assertTrue(any("remaining" in message.lower() for message in log.output))
+
 
 if __name__ == "__main__":
     unittest.main()

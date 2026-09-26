@@ -81,6 +81,18 @@ class TestInventoryLoaders(unittest.TestCase):
             self.assertTrue(equipment.available_items(equip_type),
                              f"missing starting {equip_type}")
 
+    def test_starting_inventory_has_multiple_of_each_equipment(self):
+        # The starting loadout is meant to support running more than one
+        # reaction at once -- guards against dropping back to a single
+        # rig per type.
+        path = os.path.join(os.path.dirname(__file__), "..", "src", "data", "starting_inventory.json")
+        _, equipment = load_starting_inventories(path)
+
+        for equip_type in ("rb_flask", "condenser", "tubing",
+                            "heating_mantle", "stir_bar", "magnetic_stirrer"):
+            count = len(equipment.available_items(equip_type))
+            self.assertGreaterEqual(count, 2, f"expected at least 2 starting {equip_type}, got {count}")
+
 
 class TestEquipmentMissingTypes(unittest.TestCase):
 

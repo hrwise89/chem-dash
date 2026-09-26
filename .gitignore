@@ -1,3 +1,6 @@
 __pycache__/
 *.pyc
 .venv/
+
+# Dev-mode log output (devtools.py) -- local runtime data, not source
+chem_dash.log
