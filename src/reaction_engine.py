@@ -2,6 +2,7 @@ import itertools
 import json
 from dataclasses import dataclass, field
 
+from devtools import logger
 from game_clock import GameClock
 from inventory import ChemicalInventory, EquipmentInventory, EquipmentUnavailableError
 
@@ -155,13 +156,17 @@ class ReactionEngine:
         # Check inventory has enough of each reagent
         for r, amt in reagents.items():
             if not inventory.has(r, amt):
+                logger.warning("start_reaction rejected: not enough %s (need %.2f mol, have %.2f mol)",
+                                r, amt, inventory.contents.get(r, 0.0))
                 raise ValueError(f"Not enough {r} in inventory to run reaction.")
 
         match = self.find_match(reagents)
         if not match:
+            logger.debug("start_reaction: reagents %s matched no known reaction", reagents)
             return {"unknown mixture": 1.0}
 
         reaction_name, definition = match
+        logger.debug("start_reaction: matched '%s' for reagents %s", reaction_name, reagents)
 
         # --- Reaction scale must fit in the reserved flask ---
         scale = sum(reagents.values())
@@ -175,10 +180,13 @@ class ReactionEngine:
                 definition.equipment, min_flask_capacity=scale
             )
             missing_desc = ", ".join(missing) if missing else "equipment"
+            logger.warning("start_reaction rejected: missing/busy equipment %s for '%s' (scale %.2f mol)",
+                            missing, reaction_name, scale)
             raise EquipmentUnavailableError(
                 f"Missing or busy: {missing_desc} "
                 f"(need a flask holding at least {scale:.2f} mol for '{reaction_name}')"
             )
+        logger.debug("start_reaction: reserved equipment %s for '%s'", equipment_ids, reaction_name)
 
         # --- Condition matching (computed now, applied at collection) ---
         condition_score = 1.0
@@ -220,6 +228,8 @@ class ReactionEngine:
             condition_score=condition_score,
         )
         self.active_processes[process_id] = process
+        logger.info("Started '%s' (%s): condition_score=%.2f, ready at t=%.2fh",
+                    reaction_name, process_id, condition_score, process.end_time)
         return process
 
     def collect_reaction(
@@ -237,9 +247,12 @@ class ReactionEngine:
         """
         process = self.active_processes.get(process_id)
         if process is None:
+            logger.error("collect_reaction called with unknown process_id '%s'", process_id)
             raise KeyError(f"No active reaction process with id '{process_id}'")
 
         if not process.is_ready(game_clock):
+            logger.warning("collect_reaction rejected: '%s' has %.2fh remaining",
+                            process.reaction_name, process.time_remaining(game_clock))
             raise ReactionNotReadyError(
                 f"'{process.reaction_name}' isn't done yet: "
                 f"{process.time_remaining(game_clock):.2f}h remaining"
@@ -264,6 +277,8 @@ class ReactionEngine:
         equipment_inventory.release_set(process.equipment_ids)
         del self.active_processes[process_id]
 
+        logger.info("Collected '%s' (%s): %s; released equipment %s",
+                    process.reaction_name, process_id, products, process.equipment_ids)
         return products
 
 

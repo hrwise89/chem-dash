@@ -1,0 +1,7 @@
+15:25:07 [INFO] chem_dash: Opening ReactionBenchView from bench 'bench_hood_1'
+15:25:09 [DEBUG] chem_dash: Bench: entered 'recipes' section
+15:25:09 [DEBUG] chem_dash: start_reaction: matched 'HBr + ethanol → ethyl bromide' for reagents {'HBr': 1.0, 'ethanol': 1.0}
+15:25:09 [DEBUG] chem_dash: start_reaction: reserved equipment ['rb_flask_1', 'condenser_2', 'tubing_3', 'heating_mantle_4', 'stir_bar_5', 'magnetic_stirrer_6'] for 'HBr + ethanol → ethyl bromide'
+15:25:09 [INFO] chem_dash: Started 'HBr + ethanol → ethyl bromide' (proc_1): condition_score=1.00, ready at t=4.09h
+15:25:12 [DEBUG] chem_dash: Bench: back to overview from 'notebook'
+15:25:21 [DEBUG] chem_dash: Bench: left the bench, returning to lab floor

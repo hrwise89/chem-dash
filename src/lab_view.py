@@ -5,6 +5,7 @@ from settings import (SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE, SPRITE_SCALING,
 from mini_games.column import ColumnMiniGameView
 from mini_games.bench import ReactionBenchView
 from timer_manager import TimerManager, Timer
+from devtools import logger
 
 DEFAULT_X, DEFAULT_Y = GRID_HEIGHT * 3.5 // 4, GRID_WIDTH * 1 // 4
 
@@ -210,6 +211,7 @@ class LabView(arcade.View):
 		# Interaction with benches
 		if key == arcade.key.SPACE and self.near_bench:
 			view_class = self.near_bench["opens"]
+			logger.info("Opening %s from bench '%s'", view_class.__name__, self.near_bench["name"])
 			self.window.show_view(view_class(self.window, self))
 
 	def on_key_release(self, key, modifiers):

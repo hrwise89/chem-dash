@@ -22,3 +22,10 @@ MAP_BACKGROUND_COLOR = arcade.color.LIGHT_BLUE
 # floor (LabView). At 0.05, a 4-hour reaction finishes after ~80 real
 # seconds of walking. Purely a pacing knob -- tune freely.
 GAME_HOURS_PER_REAL_SECOND = 0.05
+
+# Developer / debug logging (DEV_MODE, LOG_FILE_PATH) lives in devtools.py,
+# not here -- this file imports arcade at the top (for color constants
+# below), and devtools.py is imported from reaction_engine.py/inventory.py,
+# which are deliberately arcade-free so their tests can run headless
+# (no display needed). Importing settings.py from devtools.py would drag
+# arcade into that chain and break that. See devtools.py to change them.

@@ -1,5 +1,6 @@
 import arcade
 from settings import SCREEN_WIDTH, SCREEN_HEIGHT
+from devtools import logger
 from inventory import EquipmentUnavailableError
 from reaction_engine import batch_reagents_for_flask
 
@@ -228,7 +229,9 @@ class ReactionBenchView(arcade.View):
         elif key in (arcade.key.ENTER, arcade.key.SPACE):
             self.mode = self.sections[self.selected_index]
             self.cursor_index = 0
+            logger.debug("Bench: entered '%s' section", self.mode)
         elif key == arcade.key.ESCAPE:
+            logger.debug("Bench: left the bench, returning to lab floor")
             self.window.show_view(self.lab_view)
 
     def handle_section_keys(self, key):
@@ -242,8 +245,10 @@ class ReactionBenchView(arcade.View):
         elif key == arcade.key.F and self.mode == "notebook" and items:
             _, process = items[self.cursor_index]
             self.window.game_clock.advance_to(process.end_time)   # "warp to end"
+            logger.info("Warped game clock to t=%.2fh for '%s'", process.end_time, process.reaction_name)
             self.show_message(f"Warped time to {process.end_time:.1f}h", arcade.color.DARK_YELLOW)
         elif key == arcade.key.ESCAPE:
+            logger.debug("Bench: back to overview from '%s'", self.mode)
             self.mode = "overview"
 
     def activate_selected(self, selected):
@@ -275,6 +280,13 @@ class ReactionBenchView(arcade.View):
     def try_collect_reaction(self, process):
         clock = self.window.game_clock
         if not process.is_ready(clock):
+            # Checked here (rather than just calling collect_reaction and
+            # catching ReactionNotReadyError) so the engine never has to
+            # raise for a state the UI can trivially see coming -- but that
+            # also means the engine's own logging never fires for this
+            # case, so log it here instead.
+            logger.debug("Bench: '%s' not ready (%.2fh remaining)",
+                          process.reaction_name, process.time_remaining(clock))
             self.show_message(f"Not ready yet: {process.time_remaining(clock):.1f}h remaining",
                 arcade.color.DARK_YELLOW)
             return
