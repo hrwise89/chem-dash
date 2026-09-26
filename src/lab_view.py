@@ -3,6 +3,7 @@ import math
 from settings import (SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE, SPRITE_SCALING, TILE_SIZE, 
 	GRID_WIDTH, GRID_HEIGHT, PLAYER_COLOR, MAP_BACKGROUND_COLOR)
 from mini_games.column import ColumnMiniGameView
+from mini_games.bench import ReactionMiniGameView
 from timer_manager import TimerManager, Timer
 
 class Player(arcade.Sprite):
@@ -108,13 +109,15 @@ class LabView(arcade.View):
 		bench_specs = [
 			{"name": "bench_col_1", "x": TILE_SIZE * 12.5, "y": TILE_SIZE * 16.5,
 				"width": TILE_SIZE * 3, "height": TILE_SIZE, 
-				"color": arcade.color.BROWN, "mini_game": "view your columns"},
+				"color": arcade.color.BROWN, "mini_game": "view your columns",
+				"opens": ColumnMiniGameView},
 			{"name": "bench_hood_1", "x": TILE_SIZE * 6.5, "y": TILE_SIZE * 16.5,
 				"width": TILE_SIZE * 3, "height": TILE_SIZE, 
-				"color": arcade.color.DARK_GRAY, "mini_game": "view your hood"}	
+				"color": arcade.color.DARK_GRAY, "mini_game": "view your hood",
+				"opens": ReactionMiniGameView},	
 			# Additional benches here
 		]
-
+		self.near_bench = None
 		self.bench_specs = bench_specs
 		self.benches = {} # name -> sprite
 		self.bench_list = arcade.SpriteList()
@@ -195,7 +198,8 @@ class LabView(arcade.View):
 
 		# Interaction with benches
 		if key == arcade.key.SPACE and self.near_bench:
-			self.window.show_view(ColumnMiniGameView(self.window, self))
+			view_class = self.near_bench["opens"]
+			self.window.show_view(view_class(self.window, self))
 
 	def on_key_release(self, key, modifiers):
 		self.keys_held.discard(key)
