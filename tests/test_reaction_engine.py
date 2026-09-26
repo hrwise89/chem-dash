@@ -12,7 +12,7 @@ from inventory import (
     EquipmentInventory,
     EquipmentUnavailableError,
 )
-from reaction_engine import ReactionEngine, ReactionNotReadyError
+from reaction_engine import ReactionEngine, ReactionNotReadyError, batch_reagents_for_flask
 
 FULL_RIG = ["rb_flask", "condenser", "tubing", "heating_mantle", "stir_bar", "magnetic_stirrer"]
 
@@ -251,6 +251,41 @@ class TestReactionEngine(unittest.TestCase):
         self.clock.advance_to(process.end_time)
         products = self.engine.collect_reaction(process.process_id, inventory, equipment, self.clock)
         self.assertAlmostEqual(products["ethyl bromide (crude)"], 1.0, places=2)
+
+    # --- Missing-equipment error reporting ---
+    def test_equipment_error_names_missing_types(self):
+        inventory = self.make_inventory(HBr=1.0, ethanol=1.0)
+        equipment = EquipmentInventory()
+        # Everything except a condenser and a heating mantle
+        equipment.add_item("rb_flask", "250 mL RB Flask", capacity=2.0)
+        equipment.add_item("tubing", "Rubber Tubing")
+        equipment.add_item("stir_bar", "Stir Bar")
+        equipment.add_item("magnetic_stirrer", "Magnetic Stirrer")
+
+        with self.assertRaises(EquipmentUnavailableError) as ctx:
+            self.engine.start_reaction(
+                inventory, equipment, {"HBr": 1.0, "ethanol": 1.0}, "neat", 20.0, 4.0, self.clock
+            )
+        message = str(ctx.exception)
+        self.assertIn("condenser", message)
+        self.assertIn("heating_mantle", message)
+        self.assertNotIn("tubing", message)  # tubing IS available, shouldn't be listed as missing
+
+    # --- Batch sizing ---
+    def test_batch_reagents_scales_to_flask_capacity(self):
+        definition = self.engine.reaction_db["HBr + ethanol → ethyl bromide"]
+        batch = batch_reagents_for_flask(definition, flask_capacity=4.0)
+        self.assertAlmostEqual(sum(batch.values()), 4.0, places=6)
+        # Original 1:1 ratio should be preserved
+        self.assertAlmostEqual(batch["HBr"], batch["ethanol"], places=6)
+
+    def test_batch_reagents_default_matches_existing_recipes(self):
+        # Both seed recipes already sum to 2.0 (the default flask capacity),
+        # so at the default capacity, batch sizing should be a no-op.
+        for definition in self.engine.reaction_db.values():
+            batch = batch_reagents_for_flask(definition)
+            for name, amount in definition.reactants.items():
+                self.assertAlmostEqual(batch[name], amount, places=6)
 
 
 if __name__ == "__main__":

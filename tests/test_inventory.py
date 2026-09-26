@@ -7,6 +7,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from inventory import (  # noqa: E402
+    EquipmentInventory,
     chemical_inventory_from_dict,
     equipment_inventory_from_dict,
     load_starting_inventories,
@@ -79,6 +80,41 @@ class TestInventoryLoaders(unittest.TestCase):
                             "heating_mantle", "stir_bar", "magnetic_stirrer"):
             self.assertTrue(equipment.available_items(equip_type),
                              f"missing starting {equip_type}")
+
+
+class TestEquipmentMissingTypes(unittest.TestCase):
+
+    def test_reports_only_actually_missing_types(self):
+        equip = EquipmentInventory()
+        equip.add_item("rb_flask", "250 mL RB Flask", capacity=2.0)
+        equip.add_item("tubing", "Rubber Tubing")
+
+        missing = equip.missing_types(
+            ["rb_flask", "condenser", "tubing", "heating_mantle"], min_flask_capacity=2.0
+        )
+        self.assertEqual(set(missing), {"condenser", "heating_mantle"})
+
+    def test_flask_present_but_too_small_counts_as_missing(self):
+        equip = EquipmentInventory()
+        equip.add_item("rb_flask", "100 mL RB Flask", capacity=1.0)
+
+        missing = equip.missing_types(["rb_flask"], min_flask_capacity=2.0)
+        self.assertEqual(missing, ["rb_flask"])
+
+    def test_in_use_item_counts_as_missing(self):
+        equip = EquipmentInventory()
+        item = equip.add_item("condenser", "Reflux Condenser")
+        item.in_use = True
+
+        missing = equip.missing_types(["condenser"])
+        self.assertEqual(missing, ["condenser"])
+
+    def test_does_not_reserve_anything(self):
+        equip = EquipmentInventory()
+        equip.add_item("condenser", "Reflux Condenser")
+
+        equip.missing_types(["condenser"])
+        self.assertEqual(equip.available_items("condenser").__len__(), 1)
 
 
 if __name__ == "__main__":

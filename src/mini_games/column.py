@@ -34,6 +34,15 @@ class ColumnMiniGameView(arcade.View):
 		self.guide_text = arcade.Text("Use the number pad keys to interact with your columns",
 						 100, 500, arcade.color.BLACK, 20)
 
+		# One reusable Text object per column timer, instead of calling the
+		# (very slow, deprecated-for-per-frame-use) arcade.draw_text() each
+		# frame -- see on_draw, which only updates .text on these.
+		self.timer_texts = [
+			arcade.Text("", column.center_x, column.center_y + column.height / 2 + 10,
+				arcade.color.BLACK, font_size=14, anchor_x="center")
+			for column in self.columns
+		]
+
 	def on_draw(self):
 		self.clear()
 		self.guide_text.draw()
@@ -42,11 +51,10 @@ class ColumnMiniGameView(arcade.View):
 		self.columns.draw()
 
 		# Draw timers
-		for i, column in enumerate(self.columns, start=1):
+		for i, (column, timer_text) in enumerate(zip(self.columns, self.timer_texts), start=1):
 			timer = self.timers.get_timer(f"col{i}")
-			arcade.draw_text(f"{timer.get_remaining():.1f}s",
-				column.center_x, column.center_y + column.height/2 + 10,
-				arcade.color.BLACK, font_size=14, anchor_x="center")
+			timer_text.text = f"{timer.get_remaining():.1f}s"
+			timer_text.draw()
 
 	def on_key_press(self, key, modifiers):
 		if key == arcade.key.ESCAPE:

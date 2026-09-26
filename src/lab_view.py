@@ -1,7 +1,7 @@
 import arcade
 import math
-from settings import (SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE, SPRITE_SCALING, TILE_SIZE, 
-	GRID_WIDTH, GRID_HEIGHT, PLAYER_COLOR, MAP_BACKGROUND_COLOR)
+from settings import (SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE, SPRITE_SCALING, TILE_SIZE,
+	GRID_WIDTH, GRID_HEIGHT, PLAYER_COLOR, MAP_BACKGROUND_COLOR, GAME_HOURS_PER_REAL_SECOND)
 from mini_games.column import ColumnMiniGameView
 from mini_games.bench import ReactionBenchView
 from timer_manager import TimerManager, Timer
@@ -90,8 +90,12 @@ class LabView(arcade.View):
 		self.all_sprites.append(self.player)
 		
 		# Text
-		self.instruction_text = arcade.Text("Use arrow keys to move player tile by tile", 
+		self.instruction_text = arcade.Text("Use arrow keys to move player tile by tile",
 			10, SCREEN_HEIGHT - 20, arcade.color.BLACK, font_size=14)
+		# Reused across frames (rather than rebuilt each on_draw) for the
+		# "Press SPACE to ..." bench prompt -- see on_draw/on_update.
+		self.prompt_text = arcade.Text("", 0, 0, arcade.color.BLACK,
+			font_size=14, anchor_x="center")
 
 		# Walls
 		self.walls = arcade.SpriteList()
@@ -149,19 +153,23 @@ class LabView(arcade.View):
 		self.bench_list.draw()
 
 
-		# Draw bench text
+		# Draw bench text (Text object is created once in __init__ and just
+		# repositioned/retexted here, rather than rebuilt every frame)
 		if self.near_bench:
 			bench = self.benches[self.near_bench["name"]]
-			self.prompt_text = arcade.Text(f"Press SPACE to {self.near_bench["mini_game"]}",
-				bench.center_x, bench.center_y + 40, arcade.color.BLACK,
-				font_size=14, anchor_x="center")
+			self.prompt_text.text = f"Press SPACE to {self.near_bench['mini_game']}"
+			self.prompt_text.x = bench.center_x
+			self.prompt_text.y = bench.center_y + 40
 			self.prompt_text.draw()
-		else:
-			self.prompt_text = None
 
 
 	def on_update(self, delta_time):
 		self.time_since_move += delta_time
+
+		# In-game time passes while the player is out on the lab floor. It
+		# does NOT tick inside mini-games/the reaction bench (those views
+		# don't call this), matching "time passes while walking around."
+		self.window.game_clock.advance(delta_time * GAME_HOURS_PER_REAL_SECOND)
 
 		# Handle keyboard input
 		d_row, d_col = 0, 0

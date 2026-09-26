@@ -9,6 +9,13 @@ from inventory import ChemicalInventory, EquipmentInventory, EquipmentUnavailabl
 # to import Inventory directly from reaction_engine.
 Inventory = ChemicalInventory
 
+# Batch sizing: for now, "a batch" of a recipe means scaling its reactant
+# ratios up (or down) so they sum to the smallest RB flask the player can
+# own (a 250 mL flask, capacity 2.0 mol in the same abstract "scale" units
+# used elsewhere). TODO: once equipment varies per player, base this on the
+# smallest flask actually in their equipment_inventory instead of a constant.
+DEFAULT_BATCH_FLASK_CAPACITY = 2.0
+
 
 # ===============================================================
 # Errors
@@ -58,6 +65,23 @@ class ReactionProcess:
 
     def time_remaining(self, game_clock: GameClock) -> float:
         return max(0.0, self.end_time - game_clock.now())
+
+
+def batch_reagents_for_flask(
+    definition: ReactionDefinition,
+    flask_capacity: float = DEFAULT_BATCH_FLASK_CAPACITY,
+) -> dict[str, float]:
+    """
+    Scale a reaction's base reactant ratios up (or down) so their total
+    equals `flask_capacity` -- i.e. "a full batch" in whatever's the
+    smallest flask available. Used both to show the player how much of
+    each reagent a batch needs, and to actually run that batch size.
+    """
+    base_total = sum(definition.reactants.values())
+    if base_total <= 0:
+        return dict(definition.reactants)
+    scale = flask_capacity / base_total
+    return {name: amount * scale for name, amount in definition.reactants.items()}
 
 
 # ===============================================================
@@ -147,9 +171,13 @@ class ReactionEngine:
             definition.equipment, min_flask_capacity=scale
         )
         if equipment_ids is None:
+            missing = equipment_inventory.missing_types(
+                definition.equipment, min_flask_capacity=scale
+            )
+            missing_desc = ", ".join(missing) if missing else "equipment"
             raise EquipmentUnavailableError(
-                f"Missing or busy equipment for '{reaction_name}' "
-                f"(need: {definition.equipment}, scale: {scale} mol)"
+                f"Missing or busy: {missing_desc} "
+                f"(need a flask holding at least {scale:.2f} mol for '{reaction_name}')"
             )
 
         # --- Condition matching (computed now, applied at collection) ---

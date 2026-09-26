@@ -16,3 +16,9 @@ PLAYER_COLOR = arcade.color.BLUE
 
 # Level Settings
 MAP_BACKGROUND_COLOR = arcade.color.LIGHT_BLUE
+
+# Time Settings
+# How many in-game hours pass per real second while walking around the lab
+# floor (LabView). At 0.05, a 4-hour reaction finishes after ~80 real
+# seconds of walking. Purely a pacing knob -- tune freely.
+GAME_HOURS_PER_REAL_SECOND = 0.05

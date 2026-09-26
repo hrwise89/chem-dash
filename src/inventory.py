@@ -135,6 +135,30 @@ class EquipmentInventory:
 
         return [item.id for item in chosen]
 
+    def missing_types(self, required_types: list[str],
+                       min_flask_capacity: float | None = None) -> list[str]:
+        """
+        Report which of the required equipment types currently have no
+        available (free, and big-enough-if-a-flask) item -- so callers can
+        tell the player exactly what they're short of, rather than a plain
+        "equipment unavailable". Does not reserve anything.
+        """
+        missing = []
+        tentatively_claimed = set()
+        for type_ in required_types:
+            min_cap = min_flask_capacity if type_ == "rb_flask" else None
+            candidates = [
+                item for item in self.available_items(type_, min_capacity=min_cap)
+                if item.id not in tentatively_claimed
+            ]
+            if not candidates:
+                missing.append(type_)
+            else:
+                # Claim one so two required roles of the same type don't
+                # both "pass" by pointing at the one physical item.
+                tentatively_claimed.add(candidates[0].id)
+        return missing
+
     def release_set(self, item_ids: list[str]) -> None:
         """Free up a set of previously-reserved items (e.g. after a reaction completes)."""
         for item_id in item_ids:
