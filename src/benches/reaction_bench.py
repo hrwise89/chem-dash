@@ -498,27 +498,24 @@ class ReactionBenchView(BenchView):
 
         below_min = selected < self.pending_min_moles
         value_color = arcade.color.DARK_YELLOW if below_min else arcade.color.BLACK
-        self.text_pool.get(2, f"{selected:.2f} mol selected  (max {self.pending_max_moles:.2f} mol)",
+        self.text_pool.get("amount_selected", f"{selected:.2f} mol selected  (max {self.pending_max_moles:.2f} mol)",
             center_x, bar_y - 34, value_color, font_size=16, anchor_x="center").draw()
 
-        next_index = 3
         if below_min:
-            self.text_pool.get(3, "Below recommended minimum -- yield may suffer",
+            self.text_pool.get("below_min_warning", "Below recommended minimum -- yield may suffer",
                 center_x, bar_y - 56, arcade.color.DARK_YELLOW, font_size=13, anchor_x="center").draw()
-            next_index = 4
 
         preview_y = bar_y - 56 - (22 if below_min else 0) - 20
-        for line in self._preview_lines():
+        for i, line in enumerate(self._preview_lines()):
             if line == "":
                 preview_y -= 10
                 continue
             is_header = line in ("Reagents", "Product(s)")
             color = arcade.color.DARK_BLUE if is_header else arcade.color.BLACK
             font_size = 15 if is_header else 14
-            self.text_pool.get(next_index, line, center_x, preview_y,
+            self.text_pool.get(f"preview_line_{i}", line, center_x, preview_y,
                 color, font_size=font_size, anchor_x="center").draw()
             preview_y -= 22
-            next_index += 1
 
         self.draw_instructions(
             "UP/DOWN to choose Max/Slider, LEFT/RIGHT to adjust slider, ENTER to confirm, ESC to go back")

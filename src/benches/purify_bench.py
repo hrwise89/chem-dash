@@ -127,14 +127,15 @@ class PurifyBenchView(BenchView):
         """A read-only "what crude product do I have" panel, shown on the
         scale and method menus (not just the crude picker) per the design
         note that this should be visible "from the first menu page and at
-        each level as appropriate". Uses fixed high text_pool indices so it
-        never collides with draw_centered_menu's own rows."""
+        each level as appropriate". Uses its own named text_pool keys, so
+        it can't collide with draw_centered_menu's own int-keyed rows no
+        matter how many the menu above it has."""
         center_x = self.title_text.x
-        self.text_pool.get(90, "Crude products on hand:", center_x, top_y,
+        self.text_pool.get("crude_summary_header", "Crude products on hand:", center_x, top_y,
                             arcade.color.DARK_BLUE, font_size=14, anchor_x="center").draw()
         lines = [label for label, _ in self.crude_chemicals()] or ["(none)"]
         for i, line in enumerate(lines[:6]):
-            self.text_pool.get(91 + i, line, center_x, top_y - 22 - i * 20,
+            self.text_pool.get(f"crude_summary_row_{i}", line, center_x, top_y - 22 - i * 20,
                                 arcade.color.BLACK, font_size=13, anchor_x="center").draw()
 
     # ---- crude chemical picker ----
@@ -218,7 +219,8 @@ class PurifyBenchView(BenchView):
         self.draw_centered_menu([(f"{self._format_amount(mass_g)} selected", True)])
 
         center_x = self.title_text.x
-        self.text_pool.get(4, f"Available: {self._format_amount(have_mass_g)}", center_x, LIST_START_Y - 45,
+        self.text_pool.get("available", f"Available: {self._format_amount(have_mass_g)}",
+                            center_x, LIST_START_Y - 45,
                             arcade.color.DARK_BLUE, font_size=13, anchor_x="center").draw()
         bar_y = LIST_START_Y - 40 - 30
         left = center_x - PURIFY_SLIDER_WIDTH / 2
@@ -238,9 +240,9 @@ class PurifyBenchView(BenchView):
         cost_lines = [f"Cost: {silica_g:.1f} g {SILICA_NAME}" if silica_g > 0 else None,
                       f"{solvent_ml:.1f} mL {method.solvent_name}" if solvent_ml > 0 else None]
         summary = ", ".join(line for line in cost_lines if line) or "Cost: none"
-        self.text_pool.get(2, summary, center_x, bar_y - 34, arcade.color.DARK_BLUE,
+        self.text_pool.get("cost_summary", summary, center_x, bar_y - 34, arcade.color.DARK_BLUE,
                             font_size=13, anchor_x="center").draw()
-        self.text_pool.get(3,
+        self.text_pool.get("time_yield",
             f"Time: {method.time_hours * 60:.0f} min   Yield: {method.min_yield * 100:.0f}"
             f"-{method.max_yield * 100:.0f}%",
             center_x, bar_y - 54, arcade.color.DARK_BLUE, font_size=13, anchor_x="center").draw()

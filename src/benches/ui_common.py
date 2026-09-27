@@ -40,23 +40,35 @@ class Bench(arcade.SpriteSolidColor):
 
 class TextPool:
     """
-    A small pool of reusable arcade.Text objects, indexed by position.
+    A small pool of reusable arcade.Text objects, keyed by whatever a
+    caller wants to identify a given line with.
     arcade.draw_text() is a known-slow function when called every frame (it
     builds a fresh pyglet Label from scratch each time); the recommended fix
     is arcade.Text objects, but creating a NEW Text object every frame is
     still wasteful. This pool grows as needed and hands back the same Text
-    object for a given index on every call, so on_draw only ever updates a
+    object for a given key on every call, so on_draw only ever updates a
     couple of attributes on already-built Text objects.
+
+    A key can be a plain int for a mechanically-generated row (a loop
+    drawing one line per item, where the index IS the identity -- see
+    draw_centered_menu/draw_scrollable_list below) or a short descriptive
+    string for a one-off line a method draws by hand (e.g. "available",
+    "cost_summary") -- prefer a string there. Two draw calls that use the
+    same string key always share one Text object, so a string key only
+    needs to be unique among the lines drawn *together* on one screen, not
+    across the whole view -- unlike a hand-picked int offset, there's
+    nothing to reserve or collide with.
     """
 
     def __init__(self):
-        self._pool: list[arcade.Text] = []
+        self._pool: dict[object, arcade.Text] = {}
 
-    def get(self, index: int, text: str, x: float, y: float, color,
+    def get(self, key, text: str, x: float, y: float, color,
             font_size: int = 16, anchor_x: str = "left") -> arcade.Text:
-        while len(self._pool) <= index:
-            self._pool.append(arcade.Text("", 0, 0, arcade.color.BLACK, anchor_x="left"))
-        t = self._pool[index]
+        t = self._pool.get(key)
+        if t is None:
+            t = arcade.Text("", 0, 0, arcade.color.BLACK, anchor_x="left")
+            self._pool[key] = t
         t.text = text
         t.x = x
         t.y = y
@@ -64,9 +76,6 @@ class TextPool:
         t.font_size = font_size
         t.anchor_x = anchor_x
         return t
-
-    def size(self) -> int:
-        return len(self._pool)
 
 
 def wrap_to_width(text: str, max_width: float, font_size: int = 16) -> list[str]:
