@@ -10,6 +10,7 @@
     "state": "liquid",
     "molecular_weight": 46.07,
     "molarity": 17.13,
+    "density": 1.0,
     "price_per_unit": 0.03
   },
   "sodium cyanide": {
@@ -20,27 +21,23 @@
   "ethyl bromide": {
     "state": "liquid",
     "molecular_weight": 108.97,
-    "molarity": 13.4
+    "molarity": 13.4,
+    "density": 1.0
   },
   "ethyl cyanide": {
     "state": "liquid",
     "molecular_weight": 55.08,
-    "molarity": 14.47
+    "molarity": 14.47,
+    "density": 1.0
   },
   "water": {
     "state": "liquid",
     "molecular_weight": 18.02,
-    "molarity": 55.49
+    "molarity": 55.49,
+    "density": 1.0
   },
   "sodium bromide": {
     "state": "solid",
     "molecular_weight": 102.89
-  },
-  "diethyl ether": {
-    "state": "liquid",
-    "molecular_weight": 74.12,
-    "molarity": 9.63,
-    "price_per_unit": 0.05,
-    "is_solvent": true
   }
 }

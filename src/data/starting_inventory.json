@@ -2,8 +2,7 @@
   "chemicals": {
     "48% hydrobromic acid": 700.0,
     "ethanol": 350.0,
-    "sodium cyanide": 100.0,
-    "diethyl ether": 1000.0
+    "sodium cyanide": 100.0
   },
   "equipment": [
     {"type": "rb_flask", "name": "125 mL RB Flask", "capacity": 125.0},
@@ -24,10 +23,12 @@
     {"type": "magnetic_stirrer", "name": "Magnetic Stirrer"},
     {"type": "magnetic_stirrer", "name": "Magnetic Stirrer"},
     {"type": "magnetic_stirrer", "name": "Magnetic Stirrer"},
-    {"type": "glass_column", "name": "Glass Column"},
-    {"type": "glass_column", "name": "Glass Column"}
+    {"type": "chroma_column_micro", "name": "Chromatography Column (Micro)"},
+    {"type": "distill_column_bench", "name": "Distillation Column (Bench)"}
   ],
   "consumables": {
-    "silica": 50.0
+    "Bulk Solvent (Technical Grade, 95%)": 3000.0,
+    "Bulk Solvent (Reagent Grade, 99%)": 500.0,
+    "Silica Gel": 500.0
   }
 }

@@ -28,8 +28,8 @@ REAL_STARTING_INVENTORY_PATH = os.path.join(os.path.dirname(__file__), "..", "sr
 # real game data: a solid, a plain liquid, and a solution.
 SAMPLE_CATALOG = {
     "sodium cyanide": ChemicalSpecies(name="sodium cyanide", state="solid", molecular_weight=49.01),
-    "ethanol": ChemicalSpecies(name="ethanol", state="liquid", molarity=17.13),
-    "ethyl bromide": ChemicalSpecies(name="ethyl bromide", state="liquid", molarity=13.4),
+    "ethanol": ChemicalSpecies(name="ethanol", state="liquid", molarity=17.13, density=1.0),
+    "ethyl bromide": ChemicalSpecies(name="ethyl bromide", state="liquid", molarity=13.4, density=1.0),
     "48% hydrobromic acid": ChemicalSpecies(
         name="48% hydrobromic acid", state="solution", solute="HBr", solvent="water", molarity=8.8,
     ),
@@ -44,7 +44,7 @@ class TestChemicalSpecies(unittest.TestCase):
         self.assertEqual(species.unit_label(), "g")
 
     def test_liquid_moles_per_unit_uses_molarity(self):
-        species = ChemicalSpecies(name="ethanol", state="liquid", molarity=17.13)
+        species = ChemicalSpecies(name="ethanol", state="liquid", molarity=17.13, density=1.0)
         self.assertAlmostEqual(species.moles_per_unit(), 17.13 / 1000, places=6)
         self.assertEqual(species.unit_label(), "mL")
 
@@ -61,7 +61,19 @@ class TestChemicalSpecies(unittest.TestCase):
 
     def test_liquid_without_molarity_rejected(self):
         with self.assertRaises(ValueError):
-            ChemicalSpecies(name="mystery liquid", state="liquid")
+            ChemicalSpecies(name="mystery liquid", state="liquid", density=1.0)
+
+    def test_liquid_without_density_rejected(self):
+        with self.assertRaises(ValueError):
+            ChemicalSpecies(name="mystery liquid", state="liquid", molarity=1.0)
+
+    def test_solution_does_not_need_density(self):
+        # Density is specifically for pure "liquid" reagents (see
+        # purification.py's mass conversion) -- a solution isn't one.
+        species = ChemicalSpecies(
+            name="48% hydrobromic acid", state="solution", solute="HBr", solvent="water", molarity=8.8,
+        )
+        self.assertIsNone(species.density)
 
     def test_solution_without_solute_rejected(self):
         with self.assertRaises(ValueError):
@@ -259,12 +271,16 @@ class TestInventoryLoaders(unittest.TestCase):
             self.assertTrue(chemicals.has_moles(chem, 1.0), f"missing starting {chem}")
 
         for equip_type in ("rb_flask", "condenser", "tubing",
-                            "heating_mantle", "stir_bar", "magnetic_stirrer", "glass_column"):
+                            "heating_mantle", "stir_bar", "magnetic_stirrer",
+                            "chroma_column_micro", "distill_column_bench"):
             self.assertTrue(equipment.available_items(equip_type),
                              f"missing starting {equip_type}")
 
-        self.assertTrue(chemicals.has("diethyl ether", 1.0), "missing starting diethyl ether")
-        self.assertTrue(consumables.has("silica", 1.0), "missing starting silica")
+        self.assertTrue(consumables.has("Bulk Solvent (Technical Grade, 95%)", 1.0),
+                         "missing starting technical-grade solvent")
+        self.assertTrue(consumables.has("Bulk Solvent (Reagent Grade, 99%)", 1.0),
+                         "missing starting reagent-grade solvent")
+        self.assertTrue(consumables.has("Silica Gel", 1.0), "missing starting silica gel")
 
     def test_starting_inventory_has_multiple_of_each_equipment(self):
         # The starting loadout is meant to support running more than one
@@ -338,20 +354,6 @@ class TestConsumableInventory(unittest.TestCase):
     def test_consumable_inventory_from_dict(self):
         inv = consumable_inventory_from_dict({"silica": 50.0})
         self.assertTrue(inv.has("silica", 50.0))
-
-
-class TestSolventTag(unittest.TestCase):
-
-    def test_is_solvent_defaults_to_false(self):
-        species = ChemicalSpecies(name="ethanol", state="liquid", molarity=17.13)
-        self.assertFalse(species.is_solvent)
-
-    def test_is_solvent_can_be_set_and_species_stays_a_normal_reagent(self):
-        species = ChemicalSpecies(name="diethyl ether", state="liquid", molarity=9.63, is_solvent=True)
-        self.assertTrue(species.is_solvent)
-        # Being tagged a solvent doesn't change how it converts to moles --
-        # it's still an ordinary liquid species, usable as any reagent is.
-        self.assertAlmostEqual(species.moles_per_unit(), 9.63 / 1000.0, places=6)
 
 
 if __name__ == "__main__":

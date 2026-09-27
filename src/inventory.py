@@ -100,23 +100,26 @@ class ChemicalSpecies:
     molarity: float | None = None           # mol/L -- required for "liquid"/"solution"
     solute: str | None = None               # required for "solution"
     solvent: str | None = None              # informational, "solution" only
+    density: float | None = None            # g/mL -- required for "liquid". Lets
+                                             # purification.py convert a liquid's
+                                             # native mL amount to a mass in grams,
+                                             # the unit purification always works in
+                                             # (so the same mass-based slider/cost
+                                             # numbers apply to solids and liquids
+                                             # alike). Purely a property for now --
+                                             # nothing else reads it yet.
     price_per_unit: float | None = None     # $ per native unit (g or mL), for the
                                              # computer bench's catalogue; None means
                                              # it isn't sold there (e.g. a product
                                              # the player makes rather than buys)
-    is_solvent: bool = False                # role tag for the purify bench's supplies
-                                             # list ("usable as a reaction solvent") --
-                                             # independent of the `solvent` field above
-                                             # (that's a solution's own dissolving
-                                             # medium); a species can be both a
-                                             # solvent and an ordinary reagent, e.g.
-                                             # diethyl ether
 
     def __post_init__(self):
         if self.state == "solid" and not self.molecular_weight:
             raise ValueError(f"Solid species '{self.name}' needs a molecular_weight")
         if self.state in ("liquid", "solution") and not self.molarity:
             raise ValueError(f"{self.state.capitalize()} species '{self.name}' needs a molarity")
+        if self.state == "liquid" and not self.density:
+            raise ValueError(f"Liquid species '{self.name}' needs a density")
         if self.state == "solution" and not self.solute:
             raise ValueError(f"Solution species '{self.name}' needs a solute")
         if self.state not in ("solid", "liquid", "solution"):

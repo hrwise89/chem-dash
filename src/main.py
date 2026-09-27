@@ -11,7 +11,7 @@ import arcade  # noqa: E402
 from settings import (SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE, SPRITE_SCALING, TILE_SIZE,  # noqa: E402
 	GRID_WIDTH, GRID_HEIGHT, PLAYER_COLOR, MAP_BACKGROUND_COLOR)
 from lab_view import LabView  # noqa: E402
-from timer_manager import TimerManager, Timer  # noqa: E402
+from timer_manager import TimerManager  # noqa: E402
 from inventory import load_starting_inventories  # noqa: E402
 from reaction_engine import ReactionEngine  # noqa: E402
 from game_clock import GameClock  # noqa: E402
@@ -47,9 +47,6 @@ def main():
 	)
 
 	window.timer_manager = TimerManager()  # attach it to the window
-	window.timer_manager.add_timer("col1", Timer(30))
-	window.timer_manager.add_timer("col2", Timer(30))
-	window.timer_manager.add_timer("col3", Timer(30))
 
 	# Create labview
 	lab_view = LabView(window)

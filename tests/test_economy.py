@@ -15,8 +15,8 @@ from economy import (
 from inventory import ChemicalInventory, ChemicalSpecies
 
 SPECIES_CATALOG = {
-    "ethanol": ChemicalSpecies(name="ethanol", state="liquid", molarity=1000.0, price_per_unit=0.03),
-    "ethyl bromide": ChemicalSpecies(name="ethyl bromide", state="liquid", molarity=1000.0),  # not for sale
+    "ethanol": ChemicalSpecies(name="ethanol", state="liquid", molarity=1000.0, density=1.0, price_per_unit=0.03),
+    "ethyl bromide": ChemicalSpecies(name="ethyl bromide", state="liquid", molarity=1000.0, density=1.0),  # not for sale
 }
 
 

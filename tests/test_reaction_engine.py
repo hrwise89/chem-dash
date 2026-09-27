@@ -37,7 +37,8 @@ IDENTITY_MOLARITY = 1000.0
 
 
 def _identity_species(*names) -> dict[str, ChemicalSpecies]:
-    return {name: ChemicalSpecies(name=name, state="liquid", molarity=IDENTITY_MOLARITY) for name in names}
+    return {name: ChemicalSpecies(name=name, state="liquid", molarity=IDENTITY_MOLARITY, density=1.0)
+            for name in names}
 
 
 TEST_SPECIES_CATALOG = _identity_species(
