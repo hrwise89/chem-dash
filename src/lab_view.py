@@ -22,16 +22,28 @@ DEFAULT_X, DEFAULT_Y = 2, 10
 DOOR_ROW = ROOM_ROWS - 2
 DOOR_COL = -1  # just outside the interior's leftmost column, inside the wall
 
-# Top-row benches (reaction, purify) sit half a tile below where the top
-# wall's row would be, matching how the original (larger) room lined its
-# benches up flush with the top wall. The paired bench below each (shipping
-# under reaction, computer under purify) sits exactly 2 tiles south.
-BENCH_TOP_ROW = ROOM_ROWS - 1.5
+# Top-row benches (reaction, purify) sit flush against the top wall, on the
+# topmost interior row -- an integer row, so a 1-tile-deep bench lines up
+# with the tile grid exactly instead of straddling two rows. The paired
+# bench below each (shipping under reaction, computer under purify) sits
+# exactly 2 tiles south, leaving one full clear tile between the rows for
+# the player to walk through.
+BENCH_TOP_ROW = ROOM_ROWS - 1
 BENCH_BOTTOM_ROW = BENCH_TOP_ROW - 2
+# Bench columns are half-tile-centered on purpose: a 3-tile-wide bench
+# centered on an N.5 column lines its edges up exactly with tile
+# boundaries (tiles N-1, N, N+1), the same way BENCH_TOP_ROW does for a
+# 1-tile-deep bench on a whole row.
 REACTION_COL = 5.5
 PURIFY_COL = 13.5
 
 DOOR_MENU_OPTIONS = ["Leave for the day", "Stay in the lab", "Visit university", "Visit the city"]
+
+# The door's own activation tile is the same color as the wall (it IS a
+# chunk of the wall), so it'd otherwise be invisible -- this thin strip
+# just outside it marks where it actually is.
+DOOR_MARKER_WIDTH = TILE_SIZE / 4
+DOOR_MARKER_COLOR = arcade.color.SADDLE_BROWN
 
 
 def _room_x(local_col: float) -> float:
@@ -217,12 +229,20 @@ class LabView(arcade.View):
 		self.all_sprites.draw()
 		self.walls.draw()
 		self.bench_list.draw()
+		self.draw_door_marker()
 
 		self.draw_status_bar()
 		self.draw_message_box()
 
 		if self.door_menu_open:
 			self.draw_door_menu()
+
+	def draw_door_marker(self):
+		door_left = _room_x(DOOR_COL) - TILE_SIZE / 2
+		door_bottom = _room_y(DOOR_ROW) - TILE_SIZE / 2
+		door_top = door_bottom + TILE_SIZE
+		arcade.draw_lrbt_rectangle_filled(door_left - DOOR_MARKER_WIDTH, door_left, door_bottom, door_top,
+			DOOR_MARKER_COLOR)
 
 	def draw_status_bar(self):
 		arcade.draw_lrbt_rectangle_filled(0, SCREEN_WIDTH, SCREEN_HEIGHT - STATUS_BAR_HEIGHT, SCREEN_HEIGHT,
