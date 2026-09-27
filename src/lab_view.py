@@ -9,6 +9,12 @@ from devtools import logger
 
 DEFAULT_X, DEFAULT_Y = GRID_HEIGHT * 3.5 // 4, GRID_WIDTH * 1 // 4
 
+# Where the door (go home for the day) sits: bottom-right of the room,
+# away from the benches along the top wall and the default spawn point.
+DOOR_ROW, DOOR_COL = 2, 20
+
+STATUS_MESSAGE_DURATION = 4.0
+
 class Player(arcade.Sprite):
 	def __init__(self, row: int, col: int, color: tuple[int,int,int] = PLAYER_COLOR):
 		super().__init__()
@@ -78,6 +84,7 @@ class LabView(arcade.View):
 		super().__init__()
 		self.window = window
 		self.timer_manager = window.timer_manager
+		self.day_manager = window.day_manager
 		arcade.set_background_color(MAP_BACKGROUND_COLOR)
 		# Movement
 		self.keys_held = set()
@@ -97,6 +104,15 @@ class LabView(arcade.View):
 		# "Press SPACE to ..." bench prompt -- see on_draw/on_update.
 		self.prompt_text = arcade.Text("", 0, 0, arcade.color.BLACK,
 			font_size=14, anchor_x="center")
+		# Day/time-of-day readout, top-right.
+		self.day_text = arcade.Text("", SCREEN_WIDTH - 10, SCREEN_HEIGHT - 20,
+			arcade.color.BLACK, font_size=14, anchor_x="right")
+		# Transient status line (sleepy warning, "you passed out", etc), same
+		# pattern as BenchView.show_message/draw_message.
+		self.status_text = arcade.Text("", SCREEN_WIDTH // 2, SCREEN_HEIGHT - 20,
+			arcade.color.DARK_RED, font_size=14, anchor_x="center")
+		self.status_message = ""
+		self.status_message_timer = 0.0
 
 		# Walls
 		self.walls = arcade.SpriteList()
@@ -120,10 +136,15 @@ class LabView(arcade.View):
 				"color": arcade.color.BROWN, "action": "purify your products",
 				"opens": PurifyBenchView},
 			{"name": "bench_hood_1", "x": TILE_SIZE * 6.5, "y": TILE_SIZE * 16.5,
-				"width": TILE_SIZE * 3, "height": TILE_SIZE, 
+				"width": TILE_SIZE * 3, "height": TILE_SIZE,
 				"color": arcade.color.DARK_GRAY, "action": "view your hood",
-				"opens": ReactionBenchView},	
+				"opens": ReactionBenchView},
 			# Additional benches here
+			{"name": "door_home", "x": DOOR_COL * TILE_SIZE + TILE_SIZE // 2,
+				"y": DOOR_ROW * TILE_SIZE + TILE_SIZE // 2,
+				"width": TILE_SIZE, "height": TILE_SIZE,
+				"color": arcade.color.SADDLE_BROWN, "action": "go home for the day",
+				"is_door": True},
 		]
 		self.near_bench = None
 		self.bench_specs = bench_specs
@@ -163,14 +184,33 @@ class LabView(arcade.View):
 			self.prompt_text.y = bench.center_y + 40
 			self.prompt_text.draw()
 
+		hours = self.day_manager.hours_into_day(self.window.game_clock)
+		self.day_text.text = f"Day {self.day_manager.current_day} -- {hours:.1f}h"
+		self.day_text.draw()
+
+		if self.status_message:
+			self.status_text.text = self.status_message
+			self.status_text.draw()
+		elif self.day_manager.is_sleepy(self.window.game_clock):
+			self.status_text.text = "Getting sleepy... head home soon"
+			self.status_text.draw()
+
 
 	def on_update(self, delta_time):
 		self.time_since_move += delta_time
+
+		if self.status_message_timer > 0:
+			self.status_message_timer -= delta_time
+			if self.status_message_timer <= 0:
+				self.status_message = ""
 
 		# In-game time passes while the player is out on the lab floor. It
 		# does NOT tick inside mini-games/the reaction bench (those views
 		# don't call this), matching "time passes while walking around."
 		self.window.game_clock.advance(delta_time * GAME_HOURS_PER_REAL_SECOND)
+
+		if self.day_manager.has_passed_out(self.window.game_clock):
+			self.pass_out()
 
 		# Handle keyboard input
 		d_row, d_col = 0, 0
@@ -210,9 +250,35 @@ class LabView(arcade.View):
 
 		# Interaction with benches
 		if key == arcade.key.SPACE and self.near_bench:
-			view_class = self.near_bench["opens"]
-			logger.info("Opening %s from bench '%s'", view_class.__name__, self.near_bench["name"])
-			self.window.show_view(view_class(self.window, self))
+			if self.near_bench.get("is_door"):
+				self.go_home()
+			else:
+				view_class = self.near_bench["opens"]
+				logger.info("Opening %s from bench '%s'", view_class.__name__, self.near_bench["name"])
+				self.window.show_view(view_class(self.window, self))
 
 	def on_key_release(self, key, modifiers):
 		self.keys_held.discard(key)
+
+	# ---- day/night: going home through the door, or passing out ----
+
+	def go_home(self):
+		new_day = self.day_manager.go_home(self.window.game_clock)
+		logger.info("Player went home; day %d begins", new_day)
+		self._start_new_day(f"Day {new_day} begins.")
+
+	def pass_out(self):
+		new_day = self.day_manager.pass_out(self.window.game_clock)
+		logger.info("Player passed out from exhaustion; skipped ahead to day %d", new_day)
+		self._start_new_day(f"You passed out from exhaustion! Day {new_day} begins.")
+
+	def _start_new_day(self, message: str):
+		self.player.row, self.player.col = DEFAULT_X, DEFAULT_Y
+		self.player.target_x = self.player.center_x = DEFAULT_Y * TILE_SIZE + TILE_SIZE // 2
+		self.player.target_y = self.player.center_y = DEFAULT_X * TILE_SIZE + TILE_SIZE // 2
+		self.player.moving = False
+		self.show_status(message)
+
+	def show_status(self, text: str, duration: float = STATUS_MESSAGE_DURATION):
+		self.status_message = text
+		self.status_message_timer = duration

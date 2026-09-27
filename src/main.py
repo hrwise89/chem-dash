@@ -15,6 +15,7 @@ from timer_manager import TimerManager, Timer  # noqa: E402
 from inventory import load_starting_inventories  # noqa: E402
 from reaction_engine import ReactionEngine  # noqa: E402
 from game_clock import GameClock  # noqa: E402
+from day_manager import DayManager  # noqa: E402
 
 
 def main():
@@ -22,6 +23,7 @@ def main():
 
 	# Game clock
 	window.game_clock = GameClock()
+	window.day_manager = DayManager()
 
 	# Reaction engine
 	window.reaction_engine = ReactionEngine("src/data/reactions.json")
