@@ -12,7 +12,7 @@ from settings import (SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE, SPRITE_SCALING,
 	GRID_WIDTH, GRID_HEIGHT, PLAYER_COLOR, MAP_BACKGROUND_COLOR)
 from lab_view import LabView  # noqa: E402
 from timer_manager import TimerManager  # noqa: E402
-from inventory import load_starting_inventories  # noqa: E402
+from inventory import load_consumable_catalog, load_equipment_catalog, load_starting_inventories  # noqa: E402
 from reaction_engine import ReactionEngine  # noqa: E402
 from game_clock import GameClock  # noqa: E402
 from day_manager import DayManager  # noqa: E402
@@ -45,6 +45,12 @@ def main():
 	window.chemical_inventory, window.equipment_inventory, window.consumables = load_starting_inventories(
 		"src/data/starting_inventory.json"
 	)
+
+	# Catalogs: what's purchasable (equipment/consumables) and which bench
+	# each belongs to -- used by the computer bench's catalogue and by
+	# benches that auto-list their own equipment/supplies.
+	window.equipment_catalog = load_equipment_catalog("src/data/equipment.json")
+	window.consumable_catalog = load_consumable_catalog("src/data/consumables.json")
 
 	window.timer_manager = TimerManager()  # attach it to the window
 

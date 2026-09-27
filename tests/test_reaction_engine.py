@@ -24,7 +24,7 @@ from reaction_engine import (
     reference_reagent_for,
 )
 
-FULL_RIG = ["rb_flask", "condenser", "tubing", "heating_mantle", "stir_bar", "magnetic_stirrer"]
+FULL_RIG = ["rb_flask"]
 
 # These tests are about reaction logic (stoichiometry, equipment,
 # timing, logging) -- not the mass/volume/solution conversions, which get
@@ -48,13 +48,8 @@ TEST_SPECIES_CATALOG = _identity_species(
 
 
 def make_full_rig(equipment_inventory: EquipmentInventory, flask_capacity: float = 2.0):
-    """Add one of every piece of equipment a basic reaction needs."""
+    """Add the equipment a basic reaction needs -- just a flask."""
     equipment_inventory.add_item("rb_flask", "250 mL RB Flask", capacity=flask_capacity)
-    equipment_inventory.add_item("condenser", "Reflux Condenser")
-    equipment_inventory.add_item("tubing", "Rubber Tubing")
-    equipment_inventory.add_item("heating_mantle", "Heating Mantle")
-    equipment_inventory.add_item("stir_bar", "Stir Bar")
-    equipment_inventory.add_item("magnetic_stirrer", "Magnetic Stirrer")
 
 
 class TestReactionEngine(unittest.TestCase):
@@ -199,24 +194,6 @@ class TestReactionEngine(unittest.TestCase):
         # Reagents should not have been consumed since the reaction never started
         self.assertTrue(inventory.has("HBr", 1.0))
 
-    def test_all_or_nothing_equipment_reservation(self):
-        inventory = self.make_inventory(HBr=1.0, ethanol=1.0)
-        equipment = EquipmentInventory()
-        # Everything except a condenser
-        equipment.add_item("rb_flask", "250 mL RB Flask", capacity=2.0)
-        equipment.add_item("tubing", "Rubber Tubing")
-        equipment.add_item("heating_mantle", "Heating Mantle")
-        equipment.add_item("stir_bar", "Stir Bar")
-        equipment.add_item("magnetic_stirrer", "Magnetic Stirrer")
-
-        with self.assertRaises(EquipmentUnavailableError):
-            self.engine.start_reaction(
-                inventory, equipment, {"HBr": 1.0, "ethanol": 1.0}, "neat", 20.0, 4.0, self.clock
-            )
-        # Nothing should have been reserved, since the reservation was all-or-nothing
-        for item in equipment.items.values():
-            self.assertFalse(item.in_use)
-
     def test_flask_too_small_blocks_reaction(self):
         inventory = self.make_inventory(HBr=2.0, ethanol=2.0)
         equipment = EquipmentInventory()
@@ -232,11 +209,6 @@ class TestReactionEngine(unittest.TestCase):
         equipment = EquipmentInventory()
         equipment.add_item("rb_flask", "1 L RB Flask", capacity=5.0)
         small = equipment.add_item("rb_flask", "100 mL RB Flask", capacity=2.0)
-        equipment.add_item("condenser", "Reflux Condenser")
-        equipment.add_item("tubing", "Rubber Tubing")
-        equipment.add_item("heating_mantle", "Heating Mantle")
-        equipment.add_item("stir_bar", "Stir Bar")
-        equipment.add_item("magnetic_stirrer", "Magnetic Stirrer")
 
         process = self.engine.start_reaction(
             inventory, equipment, {"HBr": 1.0, "ethanol": 1.0}, "neat", 20.0, 4.0, self.clock
@@ -250,11 +222,6 @@ class TestReactionEngine(unittest.TestCase):
         equipment = EquipmentInventory()
         big = equipment.add_item("rb_flask", "1 L RB Flask", capacity=5.0)
         equipment.add_item("rb_flask", "100 mL RB Flask", capacity=2.0)
-        equipment.add_item("condenser", "Reflux Condenser")
-        equipment.add_item("tubing", "Rubber Tubing")
-        equipment.add_item("heating_mantle", "Heating Mantle")
-        equipment.add_item("stir_bar", "Stir Bar")
-        equipment.add_item("magnetic_stirrer", "Magnetic Stirrer")
 
         process = self.engine.start_reaction(
             inventory, equipment, {"HBr": 1.0, "ethanol": 1.0}, "neat", 20.0, 4.0, self.clock,
@@ -266,11 +233,6 @@ class TestReactionEngine(unittest.TestCase):
         inventory = self.make_inventory(HBr=2.0, ethanol=2.0)
         equipment = EquipmentInventory()
         too_small = equipment.add_item("rb_flask", "100 mL RB Flask", capacity=1.0)
-        equipment.add_item("condenser", "Reflux Condenser")
-        equipment.add_item("tubing", "Rubber Tubing")
-        equipment.add_item("heating_mantle", "Heating Mantle")
-        equipment.add_item("stir_bar", "Stir Bar")
-        equipment.add_item("magnetic_stirrer", "Magnetic Stirrer")
 
         with self.assertRaises(EquipmentUnavailableError):
             self.engine.start_reaction(
@@ -339,23 +301,15 @@ class TestReactionEngine(unittest.TestCase):
         self.assertAlmostEqual(products["ethyl bromide (crude)"], 1.0, places=2)
 
     # --- Missing-equipment error reporting ---
-    def test_equipment_error_names_missing_types(self):
+    def test_equipment_error_names_missing_type(self):
         inventory = self.make_inventory(HBr=1.0, ethanol=1.0)
-        equipment = EquipmentInventory()
-        # Everything except a condenser and a heating mantle
-        equipment.add_item("rb_flask", "250 mL RB Flask", capacity=2.0)
-        equipment.add_item("tubing", "Rubber Tubing")
-        equipment.add_item("stir_bar", "Stir Bar")
-        equipment.add_item("magnetic_stirrer", "Magnetic Stirrer")
+        equipment = EquipmentInventory()  # no rb_flask at all
 
         with self.assertRaises(EquipmentUnavailableError) as ctx:
             self.engine.start_reaction(
                 inventory, equipment, {"HBr": 1.0, "ethanol": 1.0}, "neat", 20.0, 4.0, self.clock
             )
-        message = str(ctx.exception)
-        self.assertIn("condenser", message)
-        self.assertIn("heating_mantle", message)
-        self.assertNotIn("tubing", message)  # tubing IS available, shouldn't be listed as missing
+        self.assertIn("rb_flask", str(ctx.exception))
 
     # --- Reference-reagent scaling & vessel-based sizing ---
     def test_reference_reagent_defaults_to_first_reactant(self):

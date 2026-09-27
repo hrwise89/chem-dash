@@ -17,6 +17,8 @@ from purification import (  # noqa: E402
     COLUMN_CHROMATOGRAPHY,
     DISTILLATION,
     MICRO_SCALE,
+    PILOT_SCALE,
+    PRODUCTION_SCALE,
     REAGENT_SOLVENT_NAME,
     SILICA_NAME,
     TECHNICAL_SOLVENT_NAME,
@@ -67,6 +69,28 @@ class TestMassConversion(unittest.TestCase):
 
     def test_crude_name_shares_species_with_pure(self):
         self.assertAlmostEqual(mass_grams(self.inventory, "ethyl bromide (crude)", 3.0), 6.0)
+
+
+class TestScaleLabelsAndRanges(unittest.TestCase):
+
+    def test_scale_labels_use_the_dash_scale_suffix(self):
+        self.assertEqual(MICRO_SCALE.label, "Micro-Scale")
+        self.assertEqual(BENCH_SCALE.label, "Bench-Scale")
+        self.assertEqual(PILOT_SCALE.label, "Pilot-Scale")
+        self.assertEqual(PRODUCTION_SCALE.label, "Production-Scale")
+
+    def test_micro_range_label_is_in_milligrams(self):
+        self.assertEqual(MICRO_SCALE.range_label(), "Micro-Scale (5 mg - 500 mg)")
+
+    def test_bench_range_label_is_in_grams(self):
+        self.assertEqual(BENCH_SCALE.range_label(), "Bench-Scale (0.5 g - 100 g)")
+
+    def test_range_label_falls_back_to_plain_label_with_no_slider_values(self):
+        self.assertEqual(PILOT_SCALE.range_label(), "Pilot-Scale")
+
+    def test_format_amount_uses_the_scales_display_unit(self):
+        self.assertEqual(MICRO_SCALE.format_amount(0.25), "250 mg")
+        self.assertEqual(BENCH_SCALE.format_amount(0.5), "0.5 g")
 
 
 class TestSliderValues(unittest.TestCase):

@@ -26,10 +26,10 @@ Two kinds of inventory:
     output; crude and pure forms share the same species definition (same
     substance, just impure), so species lookups strip the suffix.
   - EquipmentInventory: tracks discrete pieces of lab glassware/equipment
-    (RB flasks, condensers, tubing, heating mantles, stir bars, magnetic
-    stirrers, ...). Each item can be free or in_use. Reservations for a
-    reaction are all-or-nothing: either every required role is available
-    and gets reserved together, or nothing is touched.
+    (RB flasks, purification columns, ...). Each item can be free or
+    in_use. Reservations for a reaction are all-or-nothing: either every
+    required role is available and gets reserved together, or nothing is
+    touched.
 """
 
 import itertools
@@ -302,6 +302,26 @@ class ConsumableInventory:
         return f"ConsumableInventory({self.contents})"
 
 
+@dataclass
+class ConsumableCatalogEntry:
+    """A consumable's *catalog* metadata: which bench(es) it's used at, its
+    purchase price, and its display unit. Kept separate from
+    ConsumableInventory (a bare name -> amount ledger) the same way
+    ChemicalSpecies is kept separate from ChemicalInventory."""
+    name: str
+    bench: list[str]                # e.g. ["reaction", "purify"]
+    price: float | None = None      # $ per native unit, for the computer bench's catalogue
+    unit: str = "unit"
+
+
+def load_consumable_catalog(path: str) -> dict[str, ConsumableCatalogEntry]:
+    """Load a {name: {bench, price, unit}} JSON file into
+    ConsumableCatalogEntry objects -- see src/data/consumables.json."""
+    with open(path, "r") as f:
+        data = json.load(f)
+    return {name: ConsumableCatalogEntry(name=name, **spec) for name, spec in data.items()}
+
+
 # ===============================================================
 # Equipment / glassware inventory
 # ===============================================================
@@ -314,8 +334,7 @@ class EquipmentUnavailableError(Exception):
 class EquipmentItem:
     """A single physical piece of lab equipment the player owns."""
     id: str
-    type: str                       # e.g. "rb_flask", "condenser", "tubing",
-                                     # "heating_mantle", "stir_bar", "magnetic_stirrer"
+    type: str                       # e.g. "rb_flask", "chroma_column_micro"
     name: str
     capacity: float | None = None  # only meaningful for vessels like rb_flask,
                                        # in the same abstract "scale" units as
@@ -432,6 +451,40 @@ class EquipmentInventory:
 
     def __repr__(self):
         return f"EquipmentInventory({list(self.items.values())})"
+
+
+@dataclass
+class EquipmentCatalogEntry:
+    """One purchasable line item in the equipment catalog: which physical
+    `type` it adds to an EquipmentInventory when bought, which bench it
+    belongs to, and (for a vessel) its capacity. Several catalog entries
+    can share the same `type` (e.g. every RB flask size is still
+    type="rb_flask" for reservation purposes) while having their own name/
+    capacity/price -- see src/data/equipment.json."""
+    name: str
+    type: str
+    bench: str                      # "reaction" | "purify"
+    price: float | None = None      # $, for the computer bench's catalogue
+    capacity: float | None = None
+
+
+def load_equipment_catalog(path: str) -> dict[str, EquipmentCatalogEntry]:
+    """Load a {name: {type, bench, price, capacity}} JSON file into
+    EquipmentCatalogEntry objects -- see src/data/equipment.json."""
+    with open(path, "r") as f:
+        data = json.load(f)
+    return {name: EquipmentCatalogEntry(name=name, **spec) for name, spec in data.items()}
+
+
+def bench_for_equipment_type(catalog: dict[str, EquipmentCatalogEntry], type_: str) -> str | None:
+    """Which bench owns equipment `type_`, per the catalog (None if no
+    catalog entry has that type). Multiple catalog entries can share a
+    type (e.g. every rb_flask size); the first match wins, on the
+    assumption that all of them agree on the bench."""
+    for entry in catalog.values():
+        if entry.type == type_:
+            return entry.bench
+    return None
 
 
 # ===============================================================

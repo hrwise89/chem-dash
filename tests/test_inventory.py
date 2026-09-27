@@ -12,10 +12,13 @@ from inventory import (  # noqa: E402
     ConsumableInventory,
     EquipmentInventory,
     NotCrudeError,
+    bench_for_equipment_type,
     chemical_inventory_from_dict,
     consumable_inventory_from_dict,
     equipment_inventory_from_dict,
     is_crude,
+    load_consumable_catalog,
+    load_equipment_catalog,
     load_species_catalog,
     load_starting_inventories,
     pure_name_for,
@@ -270,9 +273,7 @@ class TestInventoryLoaders(unittest.TestCase):
         for chem in ("HBr", "ethanol"):
             self.assertTrue(chemicals.has_moles(chem, 1.0), f"missing starting {chem}")
 
-        for equip_type in ("rb_flask", "condenser", "tubing",
-                            "heating_mantle", "stir_bar", "magnetic_stirrer",
-                            "chroma_column_micro", "distill_column_bench"):
+        for equip_type in ("rb_flask", "chroma_column_micro", "distill_column_bench"):
             self.assertTrue(equipment.available_items(equip_type),
                              f"missing starting {equip_type}")
 
@@ -282,16 +283,13 @@ class TestInventoryLoaders(unittest.TestCase):
                          "missing starting reagent-grade solvent")
         self.assertTrue(consumables.has("Silica Gel", 1.0), "missing starting silica gel")
 
-    def test_starting_inventory_has_multiple_of_each_equipment(self):
+    def test_starting_inventory_has_multiple_flasks(self):
         # The starting loadout is meant to support running more than one
-        # reaction at once -- guards against dropping back to a single
-        # rig per type.
+        # reaction at once -- guards against dropping back to a single flask.
         _, equipment, _ = load_starting_inventories(REAL_STARTING_INVENTORY_PATH)
 
-        for equip_type in ("rb_flask", "condenser", "tubing",
-                            "heating_mantle", "stir_bar", "magnetic_stirrer"):
-            count = len(equipment.available_items(equip_type))
-            self.assertGreaterEqual(count, 2, f"expected at least 2 starting {equip_type}, got {count}")
+        count = len(equipment.available_items("rb_flask"))
+        self.assertGreaterEqual(count, 2, f"expected at least 2 starting rb_flask, got {count}")
 
 
 class TestEquipmentMissingTypes(unittest.TestCase):
@@ -354,6 +352,53 @@ class TestConsumableInventory(unittest.TestCase):
     def test_consumable_inventory_from_dict(self):
         inv = consumable_inventory_from_dict({"silica": 50.0})
         self.assertTrue(inv.has("silica", 50.0))
+
+
+REAL_EQUIPMENT_CATALOG_PATH = os.path.join(os.path.dirname(__file__), "..", "src", "data", "equipment.json")
+REAL_CONSUMABLES_CATALOG_PATH = os.path.join(os.path.dirname(__file__), "..", "src", "data", "consumables.json")
+
+
+class TestEquipmentCatalog(unittest.TestCase):
+
+    def test_loads_real_equipment_catalog(self):
+        catalog = load_equipment_catalog(REAL_EQUIPMENT_CATALOG_PATH)
+        entry = catalog["RB Flask 250 mL"]
+        self.assertEqual(entry.type, "rb_flask")
+        self.assertEqual(entry.bench, "reaction")
+        self.assertEqual(entry.capacity, 250.0)
+        self.assertGreater(entry.price, 0)
+
+    def test_purify_equipment_tagged_purify_bench(self):
+        catalog = load_equipment_catalog(REAL_EQUIPMENT_CATALOG_PATH)
+        for name in ("Chromatography Column (Micro)", "Chromatography Column (Bench)",
+                     "Distillation Column (Micro)", "Distillation Column (Bench)"):
+            self.assertEqual(catalog[name].bench, "purify", f"{name} should be a purify-bench item")
+
+    def test_bench_for_equipment_type(self):
+        catalog = load_equipment_catalog(REAL_EQUIPMENT_CATALOG_PATH)
+        self.assertEqual(bench_for_equipment_type(catalog, "rb_flask"), "reaction")
+        self.assertEqual(bench_for_equipment_type(catalog, "chroma_column_micro"), "purify")
+        self.assertIsNone(bench_for_equipment_type(catalog, "nonexistent_type"))
+
+    def test_multiple_entries_can_share_a_type(self):
+        catalog = load_equipment_catalog(REAL_EQUIPMENT_CATALOG_PATH)
+        flask_types = {entry.type for name, entry in catalog.items() if "RB Flask" in name}
+        self.assertEqual(flask_types, {"rb_flask"})
+
+
+class TestConsumableCatalog(unittest.TestCase):
+
+    def test_loads_real_consumable_catalog(self):
+        catalog = load_consumable_catalog(REAL_CONSUMABLES_CATALOG_PATH)
+        silica = catalog["Silica Gel"]
+        self.assertEqual(silica.bench, ["purify"])
+        self.assertEqual(silica.unit, "g")
+        self.assertGreater(silica.price, 0)
+
+    def test_solvents_tagged_both_benches(self):
+        catalog = load_consumable_catalog(REAL_CONSUMABLES_CATALOG_PATH)
+        for name in ("Bulk Solvent (Technical Grade, 95%)", "Bulk Solvent (Reagent Grade, 99%)"):
+            self.assertEqual(set(catalog[name].bench), {"reaction", "purify"})
 
 
 if __name__ == "__main__":

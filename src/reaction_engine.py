@@ -438,11 +438,6 @@ if __name__ == "__main__":
 
     equipment = EquipmentInventory()
     equipment.add_item("rb_flask", "250 mL RB Flask", capacity=2.0)
-    equipment.add_item("condenser", "Reflux Condenser")
-    equipment.add_item("tubing", "Rubber Tubing")
-    equipment.add_item("heating_mantle", "Heating Mantle")
-    equipment.add_item("stir_bar", "Stir Bar")
-    equipment.add_item("magnetic_stirrer", "Magnetic Stirrer")
 
     clock = GameClock()
     engine = ReactionEngine("src/data/reactions.json")

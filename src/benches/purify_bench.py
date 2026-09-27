@@ -15,9 +15,7 @@ from purification import (
     PURIFY_METHOD_ORDER,
     PURIFY_SCALE_ORDER,
     PURIFY_SCALES,
-    REAGENT_SOLVENT_NAME,
     SILICA_NAME,
-    TECHNICAL_SOLVENT_NAME,
     available_slider_values,
     is_crude,
     mass_grams,
@@ -28,14 +26,7 @@ from purification import (
 
 PURIFY_SLIDER_WIDTH = 500
 PURIFY_SLIDER_HEIGHT = 26
-
-# Every equipment type the supplies screen reports on, in display order.
-EQUIPMENT_LABELS = {
-    "chroma_column_micro": "Chromatography Column (Micro)",
-    "distill_column_micro": "Distillation Column (Micro)",
-    "chroma_column_bench": "Chromatography Column (Bench)",
-    "distill_column_bench": "Distillation Column (Bench)",
-}
+PURIFY_BENCH_TAG = "purify"
 
 
 class PurifyBenchView(BenchView):
@@ -60,7 +51,7 @@ class PurifyBenchView(BenchView):
         for key in PURIFY_SCALE_ORDER:
             spec = PURIFY_SCALES[key]
             enabled = scale_is_available(key, equipment)
-            label = spec.label if enabled else f"{spec.label} (not available)"
+            label = spec.range_label() if enabled else f"{spec.range_label()} (not available)"
             options.append((label, enabled))
         options.append(("Supplies", True))
         return options
@@ -68,6 +59,7 @@ class PurifyBenchView(BenchView):
     def draw_menu(self):
         self.draw_title("Purify")
         self.draw_centered_menu(self._scale_menu_options())
+        self._draw_crude_summary(LIST_START_Y - len(self._scale_menu_options()) * 40 - 20)
         self.draw_instructions("UP/DOWN to choose, ENTER to select, ESC to leave bench")
 
     def handle_menu_keys(self, key):
@@ -107,6 +99,7 @@ class PurifyBenchView(BenchView):
     def draw_method_menu(self):
         self.draw_title(f"{PURIFY_SCALES[self.scale_key].label} Purification")
         self.draw_centered_menu(self._method_menu_options())
+        self._draw_crude_summary(LIST_START_Y - len(self._method_menu_options()) * 40 - 20)
         self.draw_instructions("UP/DOWN to choose, ENTER to select, ESC to go back")
 
     def handle_method_keys(self, key):
@@ -126,14 +119,38 @@ class PurifyBenchView(BenchView):
             self.mode = "menu"
             self.reset_cursor()
 
+    def _draw_crude_summary(self, top_y: float):
+        """A read-only "what crude product do I have" panel, shown on the
+        scale and method menus (not just the crude picker) per the design
+        note that this should be visible "from the first menu page and at
+        each level as appropriate". Uses fixed high text_pool indices so it
+        never collides with draw_centered_menu's own rows."""
+        center_x = self.title_text.x
+        self.text_pool.get(90, "Crude products on hand:", center_x, top_y,
+                            arcade.color.DARK_BLUE, font_size=14, anchor_x="center").draw()
+        lines = [label for label, _ in self.crude_chemicals()] or ["(none)"]
+        for i, line in enumerate(lines[:6]):
+            self.text_pool.get(91 + i, line, center_x, top_y - 22 - i * 20,
+                                arcade.color.BLACK, font_size=13, anchor_x="center").draw()
+
     # ---- crude chemical picker ----
+
+    def _crude_product_label(self, name: str, native_amount: float) -> str:
+        """"<name>: <mass> g[, <volume> mL]" -- volume only shown for a
+        liquid/solution, since a solid has no meaningful volume here."""
+        inventory = self.window.chemical_inventory
+        mass_g = mass_grams(inventory, name, native_amount)
+        species = inventory.species_for(name)
+        if species.state == "solid":
+            return f"{name}: {mass_g:.2f} g"
+        return f"{name}: {mass_g:.2f} g, {native_amount:.2f} mL"
 
     def crude_chemicals(self):
         """(label, chemical_name) pairs for every crude chemical currently
-        in stock (amount > 0)."""
+        in stock (amount > 0), showing name, mass, and volume (if any)."""
         inventory = self.window.chemical_inventory
         return [
-            (f"{name}: {inventory.describe(name)}", name)
+            (self._crude_product_label(name, amount), name)
             for name, amount in inventory.contents.items()
             if is_crude(name) and amount > 0
         ]
@@ -181,9 +198,7 @@ class PurifyBenchView(BenchView):
         self.reset_cursor()
 
     def _format_amount(self, mass_g: float) -> str:
-        scale = PURIFY_SCALES[self.scale_key]
-        displayed = mass_g * scale.display_divisor
-        return f"{displayed:g} {scale.display_unit}"
+        return PURIFY_SCALES[self.scale_key].format_amount(mass_g)
 
     def draw_amount_screen(self):
         scale = PURIFY_SCALES[self.scale_key]
@@ -191,10 +206,16 @@ class PurifyBenchView(BenchView):
         mass_g = self.available_values[self.amount_index]
         silica_g, solvent_ml = method.cost(mass_g)
 
+        inventory = self.window.chemical_inventory
+        have_native = inventory.contents.get(self.pending_crude_name, 0.0)
+        have_mass_g = mass_grams(inventory, self.pending_crude_name, have_native)
+
         self.draw_title(f"{scale.label} {method.label} -- {self.pending_crude_name}")
         self.draw_centered_menu([(f"{self._format_amount(mass_g)} selected", True)])
 
         center_x = self.title_text.x
+        self.text_pool.get(4, f"Available: {self._format_amount(have_mass_g)}", center_x, LIST_START_Y - 45,
+                            arcade.color.DARK_BLUE, font_size=13, anchor_x="center").draw()
         bar_y = LIST_START_Y - 40 - 30
         left = center_x - PURIFY_SLIDER_WIDTH / 2
         right = center_x + PURIFY_SLIDER_WIDTH / 2
@@ -262,20 +283,31 @@ class PurifyBenchView(BenchView):
     # ---- supplies (read-only) ----
 
     def supplies_lines(self):
+        """Equipment and consumables shown here are never hardcoded -- both
+        come from the shared catalogs (src/data/equipment.json,
+        src/data/consumables.json), filtered to whatever's tagged for the
+        purify bench, so a new column/supply added there shows up
+        automatically."""
         equipment = self.window.equipment_inventory
+        equipment_catalog = self.window.equipment_catalog
         consumables = self.window.consumables
+        consumable_catalog = self.window.consumable_catalog
 
+        purify_types = {entry.type: entry.name for entry in equipment_catalog.values()
+                         if entry.bench == PURIFY_BENCH_TAG}
         lines = ["Equipment"]
-        for eq_type, label in EQUIPMENT_LABELS.items():
+        for eq_type, label in sorted(purify_types.items(), key=lambda pair: pair[1]):
             total = sum(1 for item in equipment.items.values() if item.type == eq_type)
             available = len(equipment.available_items(eq_type))
             lines.append(f"{label}: {available} available / {total} total")
 
         lines.append("")
         lines.append("Consumables")
-        for name, unit in ((SILICA_NAME, "g"), (TECHNICAL_SOLVENT_NAME, "mL"), (REAGENT_SOLVENT_NAME, "mL")):
+        for name, entry in consumable_catalog.items():
+            if PURIFY_BENCH_TAG not in entry.bench:
+                continue
             amount = consumables.contents.get(name, 0.0)
-            lines.append(f"{name}: {amount:.1f} {unit}")
+            lines.append(f"{name}: {amount:.1f} {entry.unit}")
         return lines
 
     def draw_supplies(self):

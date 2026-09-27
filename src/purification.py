@@ -120,9 +120,23 @@ class PurifyScaleSpec:
     display_unit: str = "g"
     methods: dict[str, PurifyMethodSpec] = field(default_factory=dict)
 
+    def format_amount(self, mass_g: float) -> str:
+        displayed = mass_g * self.display_divisor
+        return f"{displayed:g} {self.display_unit}"
+
+    def range_label(self) -> str:
+        """E.g. "Micro-Scale (5 mg - 500 mg)" -- just the label, with no
+        range shown, for a scale with no slider notches yet (Pilot/
+        Production)."""
+        if not self.slider_values_g:
+            return self.label
+        lo = self.format_amount(self.slider_values_g[0])
+        hi = self.format_amount(self.slider_values_g[-1])
+        return f"{self.label} ({lo} - {hi})"
+
 
 MICRO_SCALE = PurifyScaleSpec(
-    label="Micro",
+    label="Micro-Scale",
     equipment_types=("chroma_column_micro", "distill_column_micro"),
     slider_values_g=[v / 1000.0 for v in _tiered_slider_values([(500, 250, 25), (250, 100, 10), (100, 5, 5)])],
     display_divisor=1000.0,
@@ -147,7 +161,7 @@ MICRO_SCALE = PurifyScaleSpec(
 )
 
 BENCH_SCALE = PurifyScaleSpec(
-    label="Bench",
+    label="Bench-Scale",
     equipment_types=("chroma_column_bench", "distill_column_bench"),
     slider_values_g=_tiered_slider_values([(100, 20, 5), (20, 10, 2), (10, 1, 1), (1, 0.5, 0.5)]),
     display_divisor=1.0,
@@ -169,8 +183,8 @@ BENCH_SCALE = PurifyScaleSpec(
     },
 )
 
-PILOT_SCALE = PurifyScaleSpec(label="Pilot", equipment_types=())
-PRODUCTION_SCALE = PurifyScaleSpec(label="Production", equipment_types=())
+PILOT_SCALE = PurifyScaleSpec(label="Pilot-Scale", equipment_types=())
+PRODUCTION_SCALE = PurifyScaleSpec(label="Production-Scale", equipment_types=())
 
 PURIFY_SCALES: dict[str, PurifyScaleSpec] = {
     "micro": MICRO_SCALE,

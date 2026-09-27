@@ -16,7 +16,14 @@ import itertools
 import json
 from dataclasses import dataclass
 
-from inventory import ChemicalInventory, crude_name_for
+from inventory import (
+    ChemicalInventory,
+    ConsumableCatalogEntry,
+    ConsumableInventory,
+    EquipmentCatalogEntry,
+    EquipmentInventory,
+    crude_name_for,
+)
 
 
 class InsufficientFundsError(Exception):
@@ -58,6 +65,39 @@ def buy_chemical(inventory: ChemicalInventory, wallet: Wallet, name: str, amount
     cost = amount * species.price_per_unit
     wallet.spend(cost)          # raises (and leaves inventory untouched) if unaffordable
     inventory.add(name, amount)
+    return cost
+
+
+def buy_equipment(equipment_inventory: EquipmentInventory, wallet: Wallet,
+                   catalog_entry: EquipmentCatalogEntry) -> float:
+    """
+    Buy one unit of `catalog_entry` (an inventory.EquipmentCatalogEntry --
+    see src/data/equipment.json) from the catalogue, adding a new
+    EquipmentItem to equipment_inventory. Returns the cost. Raises KeyError
+    if the entry has no price (not sold), and InsufficientFundsError if the
+    wallet can't cover it -- either way, nothing is added.
+    """
+    if catalog_entry.price is None:
+        raise KeyError(f"'{catalog_entry.name}' isn't sold in the catalogue")
+    wallet.spend(catalog_entry.price)          # raises (and leaves inventory untouched) if unaffordable
+    equipment_inventory.add_item(catalog_entry.type, catalog_entry.name, capacity=catalog_entry.capacity)
+    return catalog_entry.price
+
+
+def buy_consumable(consumables: ConsumableInventory, wallet: Wallet,
+                    catalog_entry: ConsumableCatalogEntry, amount: float) -> float:
+    """
+    Buy `amount` (native units, e.g. mL or g) of `catalog_entry` (an
+    inventory.ConsumableCatalogEntry -- see src/data/consumables.json) from
+    the catalogue. Returns the cost. Raises KeyError if the entry has no
+    price, and InsufficientFundsError if the wallet can't cover it --
+    either way, nothing is added.
+    """
+    if catalog_entry.price is None:
+        raise KeyError(f"'{catalog_entry.name}' isn't sold in the catalogue")
+    cost = amount * catalog_entry.price
+    wallet.spend(cost)                          # raises (and leaves inventory untouched) if unaffordable
+    consumables.add(catalog_entry.name, amount)
     return cost
 
 

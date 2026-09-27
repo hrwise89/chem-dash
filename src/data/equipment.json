@@ -1,0 +1,10 @@
+{
+  "RB Flask 125 mL": {"type": "rb_flask", "capacity": 125.0, "bench": "reaction", "price": 25.0},
+  "RB Flask 250 mL": {"type": "rb_flask", "capacity": 250.0, "bench": "reaction", "price": 40.0},
+  "RB Flask 500 mL": {"type": "rb_flask", "capacity": 500.0, "bench": "reaction", "price": 70.0},
+  "RB Flask 1 L": {"type": "rb_flask", "capacity": 1000.0, "bench": "reaction", "price": 100.0},
+  "Chromatography Column (Micro)": {"type": "chroma_column_micro", "bench": "purify", "price": 60.0},
+  "Chromatography Column (Bench)": {"type": "chroma_column_bench", "bench": "purify", "price": 150.0},
+  "Distillation Column (Micro)": {"type": "distill_column_micro", "bench": "purify", "price": 80.0},
+  "Distillation Column (Bench)": {"type": "distill_column_bench", "bench": "purify", "price": 200.0}
+}

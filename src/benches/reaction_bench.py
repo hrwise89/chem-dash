@@ -6,10 +6,15 @@ reaction, and collect it from your notebook once it's ready.
 import math
 
 import arcade
+
+from benches.ui_common import LIST_START_Y, BenchView, check_pass_out
 from devtools import logger
-from inventory import EquipmentUnavailableError
-from reaction_engine import reaction_scale_bounds, reagents_for_scale, reference_reagent_for
-from benches.ui_common import BenchView, LIST_START_Y, check_pass_out
+from inventory import EquipmentUnavailableError, bench_for_equipment_type
+from reaction_engine import (
+    reaction_scale_bounds,
+    reagents_for_scale,
+    reference_reagent_for,
+)
 
 # Placeholder category ordering for equipment rows: vessels first, then
 # everything else alphabetically by type. A real tagging system (the kind
@@ -133,10 +138,16 @@ class ReactionBenchView(BenchView):
         Group identical equipment (same type + capacity) into one row each,
         showing counts rather than one line per physical item -- otherwise
         owning 3 RB flasks means 3 near-identical rows. Sorted vessels
-        (flasks) first, then everything else by type name.
+        (flasks) first, then everything else by type name. Only equipment
+        tagged "reaction" in the shared catalog (src/data/equipment.json)
+        shows up here -- purify-bench equipment (columns) lives in its own
+        bench's supplies screen instead.
         """
+        equipment_catalog = self.window.equipment_catalog
         groups = {}  # (type, capacity) -> {"name": str, "available": int, "in_use": int}
         for item in self.window.equipment_inventory.items.values():
+            if bench_for_equipment_type(equipment_catalog, item.type) != "reaction":
+                continue
             key = (item.type, item.capacity)
             group = groups.setdefault(key, {"name": item.name, "available": 0, "in_use": 0})
             if item.in_use:

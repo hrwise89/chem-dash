@@ -10,9 +10,18 @@ from economy import (
     InsufficientFundsError,
     Wallet,
     buy_chemical,
+    buy_consumable,
+    buy_equipment,
     load_contract_offers,
 )
-from inventory import ChemicalInventory, ChemicalSpecies
+from inventory import (
+    ChemicalInventory,
+    ChemicalSpecies,
+    ConsumableCatalogEntry,
+    ConsumableInventory,
+    EquipmentCatalogEntry,
+    EquipmentInventory,
+)
 
 SPECIES_CATALOG = {
     "ethanol": ChemicalSpecies(name="ethanol", state="liquid", molarity=1000.0, density=1.0, price_per_unit=0.03),
@@ -62,6 +71,61 @@ class TestBuyChemical(unittest.TestCase):
     def test_buy_chemical_not_for_sale_raises(self):
         with self.assertRaises(KeyError):
             buy_chemical(self.inventory, self.wallet, "ethyl bromide", 10.0)
+        self.assertEqual(self.wallet.balance, 100.0)
+
+
+class TestBuyEquipment(unittest.TestCase):
+    def setUp(self):
+        self.equipment = EquipmentInventory()
+        self.wallet = Wallet(100.0)
+
+    def test_buy_adds_item_and_deducts_cost(self):
+        entry = EquipmentCatalogEntry(name="RB Flask 250 mL", type="rb_flask", bench="reaction",
+                                       price=40.0, capacity=250.0)
+        cost = buy_equipment(self.equipment, self.wallet, entry)
+        self.assertEqual(cost, 40.0)
+        self.assertEqual(self.wallet.balance, 60.0)
+        items = self.equipment.available_items("rb_flask")
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].capacity, 250.0)
+        self.assertEqual(items[0].name, "RB Flask 250 mL")
+
+    def test_buy_unaffordable_raises_and_adds_nothing(self):
+        entry = EquipmentCatalogEntry(name="Distillation Column (Bench)", type="distill_column_bench",
+                                       bench="purify", price=200.0)
+        with self.assertRaises(InsufficientFundsError):
+            buy_equipment(self.equipment, Wallet(10.0), entry)
+        self.assertEqual(self.equipment.available_items("distill_column_bench"), [])
+
+    def test_buy_entry_without_price_raises(self):
+        entry = EquipmentCatalogEntry(name="Mystery Item", type="mystery", bench="reaction", price=None)
+        with self.assertRaises(KeyError):
+            buy_equipment(self.equipment, self.wallet, entry)
+        self.assertEqual(self.wallet.balance, 100.0)
+
+
+class TestBuyConsumable(unittest.TestCase):
+    def setUp(self):
+        self.consumables = ConsumableInventory()
+        self.wallet = Wallet(100.0)
+
+    def test_buy_adds_amount_and_deducts_cost(self):
+        entry = ConsumableCatalogEntry(name="Silica Gel", bench=["purify"], price=0.08, unit="g")
+        cost = buy_consumable(self.consumables, self.wallet, entry, 100.0)
+        self.assertAlmostEqual(cost, 8.0, places=6)
+        self.assertAlmostEqual(self.wallet.balance, 92.0, places=6)
+        self.assertTrue(self.consumables.has("Silica Gel", 100.0))
+
+    def test_buy_unaffordable_raises_and_adds_nothing(self):
+        entry = ConsumableCatalogEntry(name="Silica Gel", bench=["purify"], price=0.08, unit="g")
+        with self.assertRaises(InsufficientFundsError):
+            buy_consumable(self.consumables, Wallet(1.0), entry, 1000.0)
+        self.assertFalse(self.consumables.has("Silica Gel", 1.0))
+
+    def test_buy_entry_without_price_raises(self):
+        entry = ConsumableCatalogEntry(name="Mystery Stuff", bench=["purify"], price=None)
+        with self.assertRaises(KeyError):
+            buy_consumable(self.consumables, self.wallet, entry, 10.0)
         self.assertEqual(self.wallet.balance, 100.0)
 
 
