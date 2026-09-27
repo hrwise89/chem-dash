@@ -19,9 +19,14 @@ MAP_BACKGROUND_COLOR = arcade.color.LIGHT_BLUE
 
 # Time Settings
 # How many in-game hours pass per real second while walking around the lab
-# floor (LabView). At 0.05, a 4-hour reaction finishes after ~80 real
-# seconds of walking. Purely a pacing knob -- tune freely.
-GAME_HOURS_PER_REAL_SECOND = 0.05
+# floor (LabView). Most time progression is meant to come from actions
+# (running a reaction, purifying, warping to collect) rather than from
+# walking itself, so this is deliberately slow -- at 0.005, walking around
+# for a full real minute only costs 0.3 in-game hours (18 minutes).
+# Time-consuming actions advance the clock directly (see purification.py,
+# reaction_engine.py) and are unaffected by this constant. Purely a pacing
+# knob -- tune freely.
+GAME_HOURS_PER_REAL_SECOND = 0.005
 
 # Developer / debug logging (DEV_MODE, LOG_FILE_PATH) lives in devtools.py,
 # not here -- this file imports arcade at the top (for color constants

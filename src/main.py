@@ -17,11 +17,13 @@ from reaction_engine import ReactionEngine  # noqa: E402
 from game_clock import GameClock  # noqa: E402
 from day_manager import DayManager  # noqa: E402
 from economy import ContractBoard, Wallet, load_contract_offers  # noqa: E402
+from devtools import install_crash_logging  # noqa: E402
 
 STARTING_BALANCE = 200.0
 
 
 def main():
+	install_crash_logging()  # so a crash always leaves a traceback in chem_dash.log, not just the console
 	window = arcade.Window(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE)
 
 	# Game clock
@@ -36,8 +38,9 @@ def main():
 	# Reaction engine
 	window.reaction_engine = ReactionEngine("src/data/reactions.json")
 
-	# Chemical + equipment inventory, loaded from the default starting loadout
-	window.chemical_inventory, window.equipment_inventory = load_starting_inventories(
+	# Chemical + equipment + consumable-supply inventory, loaded from the
+	# default starting loadout
+	window.chemical_inventory, window.equipment_inventory, window.consumables = load_starting_inventories(
 		"src/data/starting_inventory.json"
 	)
 

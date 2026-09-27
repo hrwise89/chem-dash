@@ -11,9 +11,10 @@ from devtools import logger
 
 DEFAULT_X, DEFAULT_Y = GRID_HEIGHT * 3.5 // 4, GRID_WIDTH * 1 // 4
 
-# Where the door (go home for the day) sits: bottom-right of the room,
-# away from the benches along the top wall and the default spawn point.
-DOOR_ROW, DOOR_COL = 2, 20
+# Where the door (go home for the day) sits: a few tiles below the
+# purify bench, close to the rest of the top-row benches rather than
+# clear across the room.
+DOOR_ROW, DOOR_COL = 13, 12
 
 STATUS_MESSAGE_DURATION = 4.0
 
@@ -90,7 +91,7 @@ class LabView(arcade.View):
 		arcade.set_background_color(MAP_BACKGROUND_COLOR)
 		# Movement
 		self.keys_held = set()
-		self.move_speed = 0.3
+		self.move_speed = 0.3 / 1.15  # ~15% faster tile-to-tile movement than before
 		self.slide_speed = self.move_speed * 0.9
 		self.time_since_move = 0.0
 
@@ -145,7 +146,7 @@ class LabView(arcade.View):
 				"width": TILE_SIZE * 3, "height": TILE_SIZE,
 				"color": arcade.color.DARK_SLATE_BLUE, "action": "use the computer",
 				"opens": ComputerBenchView},
-			{"name": "bench_shipping_1", "x": TILE_SIZE * 10.5, "y": TILE_SIZE * 2.5,
+			{"name": "bench_shipping_1", "x": TILE_SIZE * 19.5, "y": TILE_SIZE * 13.5,
 				"width": TILE_SIZE * 3, "height": TILE_SIZE,
 				"color": arcade.color.DARK_ORANGE, "action": "use the shipping desk",
 				"opens": ShippingBenchView},

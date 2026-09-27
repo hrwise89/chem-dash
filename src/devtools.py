@@ -34,6 +34,7 @@ undo that.
 """
 
 import logging
+import sys
 
 DEV_MODE = True
 LOG_FILE_PATH = "chem_dash.log"
@@ -56,3 +57,21 @@ if not logger.handlers:  # guard against duplicate handlers on re-import
         logger.addHandler(file_handler)
 
     logger.propagate = False
+
+
+def install_crash_logging():
+    """
+    Route uncaught exceptions through `logger` (with a full traceback) in
+    addition to Python's default stderr printing, so a crash always leaves
+    something in LOG_FILE_PATH -- previously an uncaught exception (e.g.
+    from inside an arcade/pyglet callback) only ever showed up on the
+    console, which is easy to lose. Call this once, as early as possible
+    (see main.py).
+    """
+    default_excepthook = sys.excepthook
+
+    def _log_then_default(exc_type, exc_value, exc_traceback):
+        logger.critical("Unhandled exception -- crashing", exc_info=(exc_type, exc_value, exc_traceback))
+        default_excepthook(exc_type, exc_value, exc_traceback)
+
+    sys.excepthook = _log_then_default

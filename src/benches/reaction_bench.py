@@ -9,7 +9,7 @@ import arcade
 from devtools import logger
 from inventory import EquipmentUnavailableError
 from reaction_engine import reaction_scale_bounds, reagents_for_scale, reference_reagent_for
-from benches.ui_common import BenchView, LIST_START_Y
+from benches.ui_common import BenchView, LIST_START_Y, check_pass_out
 
 # Placeholder category ordering for equipment rows: vessels first, then
 # everything else alphabetically by type. A real tagging system (the kind
@@ -28,6 +28,11 @@ NOTEBOOK_TABS = [
     ("Open Orders", "notebook_orders"),
     ("History", "notebook_history"),
 ]
+_SECTION_TITLES = {
+    "notebook_active": "ACTIVE REACTIONS",
+    "notebook_orders": "OPEN ORDERS",
+    "notebook_history": "HISTORY",
+}
 
 # ---- Amount-picker slider ----
 SLIDER_WIDTH = 500
@@ -213,14 +218,8 @@ class ReactionBenchView(BenchView):
         self.draw_centered_menu([(label, True) for label, _ in NOTEBOOK_TABS])
         self.draw_instructions("UP/DOWN to choose, ENTER to select, ESC to go back")
 
-    _SECTION_TITLES = {
-        "notebook_active": "ACTIVE REACTIONS",
-        "notebook_orders": "OPEN ORDERS",
-        "notebook_history": "HISTORY",
-    }
-
     def draw_section(self):
-        self.draw_title(self._SECTION_TITLES.get(self.mode, self.mode.upper()))
+        self.draw_title(_SECTION_TITLES.get(self.mode, self.mode.upper()))
         items = self.current_list()
         self.draw_scrollable_list([label for label, _ in items])
 
@@ -289,6 +288,8 @@ class ReactionBenchView(BenchView):
             _, process = items[self.cursor_index]
             self.window.game_clock.advance_to(process.end_time)   # "warp to end"
             logger.info("Warped game clock to t=%.2fh for '%s'", process.end_time, process.reaction_name)
+            if check_pass_out(self.window, self.lab_view):
+                return  # the warp pushed the player past their limit for the day
             self.show_message(f"Warped time to {process.end_time:.1f}h", arcade.color.DARK_YELLOW)
         elif key == arcade.key.ESCAPE:
             if self.mode.startswith("notebook_"):

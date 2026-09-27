@@ -256,3 +256,22 @@ class BenchView(arcade.View):
         starts at the top rather than wherever the cursor previously was."""
         self.cursor_index = 0
         self.scroll_offset = 0
+
+
+def check_pass_out(window, lab_view) -> bool:
+    """
+    Call right after any "time-consuming action" (auto-purify, warping to
+    collect a reaction, ...) advances game_clock -- those are the only ways
+    time can move while the player isn't out walking the lab floor, so
+    they're also the only place a bench needs to check whether that push
+    was enough to cross the pass-out threshold. If so, send the player back
+    to the lab floor (LabView.pass_out() resets the day) instead of leaving
+    them mid-bench on a day that's already supposed to be over. Returns
+    True when this happened -- the caller should stop touching its own
+    view state afterward, since window.show_view() has already replaced it.
+    """
+    if window.day_manager.has_passed_out(window.game_clock):
+        window.show_view(lab_view)
+        lab_view.pass_out()
+        return True
+    return False

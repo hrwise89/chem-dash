@@ -9,9 +9,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from inventory import (  # noqa: E402
     ChemicalInventory,
     ChemicalSpecies,
+    ConsumableInventory,
     EquipmentInventory,
     NotCrudeError,
     chemical_inventory_from_dict,
+    consumable_inventory_from_dict,
     equipment_inventory_from_dict,
     is_crude,
     load_species_catalog,
@@ -232,10 +234,11 @@ class TestInventoryLoaders(unittest.TestCase):
             path = f.name
 
         try:
-            chemicals, equipment = load_starting_inventories(path, species_catalog_path=REAL_CHEMICALS_PATH)
+            chemicals, equipment, consumables = load_starting_inventories(path, species_catalog_path=REAL_CHEMICALS_PATH)
             self.assertTrue(chemicals.has("ethanol", 350.0))
             self.assertTrue(chemicals.has_moles("sodium cyanide", 2.0))
             self.assertEqual(len(equipment.available_items("rb_flask")), 1)
+            self.assertEqual(consumables.contents, {})  # no "consumables" key in this test's data
         finally:
             os.remove(path)
 
@@ -243,28 +246,31 @@ class TestInventoryLoaders(unittest.TestCase):
         # species_catalog_path defaults to "chemicals.json" alongside the
         # starting-inventory file -- exercised here with the real data files,
         # which live side by side in src/data/.
-        chemicals, _ = load_starting_inventories(REAL_STARTING_INVENTORY_PATH)
+        chemicals, _, _ = load_starting_inventories(REAL_STARTING_INVENTORY_PATH)
         self.assertTrue(chemicals.has_moles("HBr", 1.0))  # via the HBr solution
         self.assertTrue(chemicals.has_moles("ethanol", 1.0))
 
     def test_starting_inventory_data_file_loads_and_has_full_rig(self):
         # Guards against src/data/starting_inventory.json drifting out of
         # sync with what reactions.json actually requires.
-        chemicals, equipment = load_starting_inventories(REAL_STARTING_INVENTORY_PATH)
+        chemicals, equipment, consumables = load_starting_inventories(REAL_STARTING_INVENTORY_PATH)
 
         for chem in ("HBr", "ethanol"):
             self.assertTrue(chemicals.has_moles(chem, 1.0), f"missing starting {chem}")
 
         for equip_type in ("rb_flask", "condenser", "tubing",
-                            "heating_mantle", "stir_bar", "magnetic_stirrer"):
+                            "heating_mantle", "stir_bar", "magnetic_stirrer", "glass_column"):
             self.assertTrue(equipment.available_items(equip_type),
                              f"missing starting {equip_type}")
+
+        self.assertTrue(chemicals.has("diethyl ether", 1.0), "missing starting diethyl ether")
+        self.assertTrue(consumables.has("silica", 1.0), "missing starting silica")
 
     def test_starting_inventory_has_multiple_of_each_equipment(self):
         # The starting loadout is meant to support running more than one
         # reaction at once -- guards against dropping back to a single
         # rig per type.
-        _, equipment = load_starting_inventories(REAL_STARTING_INVENTORY_PATH)
+        _, equipment, _ = load_starting_inventories(REAL_STARTING_INVENTORY_PATH)
 
         for equip_type in ("rb_flask", "condenser", "tubing",
                             "heating_mantle", "stir_bar", "magnetic_stirrer"):
@@ -305,6 +311,47 @@ class TestEquipmentMissingTypes(unittest.TestCase):
 
         equip.missing_types(["condenser"])
         self.assertEqual(equip.available_items("condenser").__len__(), 1)
+
+
+class TestConsumableInventory(unittest.TestCase):
+
+    def test_add_and_has(self):
+        inv = ConsumableInventory()
+        inv.add("silica", 50.0)
+        self.assertTrue(inv.has("silica", 50.0))
+        self.assertFalse(inv.has("silica", 50.1))
+
+    def test_remove_deducts_and_drops_empty_entries(self):
+        inv = ConsumableInventory()
+        inv.add("silica", 10.0)
+        inv.remove("silica", 10.0)
+        self.assertNotIn("silica", inv.contents)
+        self.assertFalse(inv.has("silica", 0.01))
+
+    def test_remove_more_than_available_raises_and_changes_nothing(self):
+        inv = ConsumableInventory()
+        inv.add("silica", 5.0)
+        with self.assertRaises(ValueError):
+            inv.remove("silica", 6.0)
+        self.assertEqual(inv.contents["silica"], 5.0)
+
+    def test_consumable_inventory_from_dict(self):
+        inv = consumable_inventory_from_dict({"silica": 50.0})
+        self.assertTrue(inv.has("silica", 50.0))
+
+
+class TestSolventTag(unittest.TestCase):
+
+    def test_is_solvent_defaults_to_false(self):
+        species = ChemicalSpecies(name="ethanol", state="liquid", molarity=17.13)
+        self.assertFalse(species.is_solvent)
+
+    def test_is_solvent_can_be_set_and_species_stays_a_normal_reagent(self):
+        species = ChemicalSpecies(name="diethyl ether", state="liquid", molarity=9.63, is_solvent=True)
+        self.assertTrue(species.is_solvent)
+        # Being tagged a solvent doesn't change how it converts to moles --
+        # it's still an ordinary liquid species, usable as any reagent is.
+        self.assertAlmostEqual(species.moles_per_unit(), 9.63 / 1000.0, places=6)
 
 
 if __name__ == "__main__":

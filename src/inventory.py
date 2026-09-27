@@ -104,6 +104,13 @@ class ChemicalSpecies:
                                              # computer bench's catalogue; None means
                                              # it isn't sold there (e.g. a product
                                              # the player makes rather than buys)
+    is_solvent: bool = False                # role tag for the purify bench's supplies
+                                             # list ("usable as a reaction solvent") --
+                                             # independent of the `solvent` field above
+                                             # (that's a solution's own dissolving
+                                             # medium); a species can be both a
+                                             # solvent and an ordinary reagent, e.g.
+                                             # diethyl ether
 
     def __post_init__(self):
         if self.state == "solid" and not self.molecular_weight:
@@ -258,6 +265,38 @@ class ChemicalInventory:
 # Backwards-compatible alias: reaction_engine.py (and earlier tests) referred
 # to this class as `Inventory`.
 Inventory = ChemicalInventory
+
+
+# ===============================================================
+# Consumable supplies (not chemicals -- e.g. silica for column packing)
+# ===============================================================
+
+class ConsumableInventory:
+    """
+    Tracks disposable lab supplies used up by actions rather than reacted --
+    e.g. silica for column chromatography. Unlike ChemicalInventory, there's
+    no species catalog/moles conversion: just a name -> amount (native
+    units, e.g. grams) ledger, consumed by plain quantity.
+    """
+
+    def __init__(self):
+        self.contents: dict[str, float] = {}
+
+    def add(self, name: str, amount: float):
+        self.contents[name] = self.contents.get(name, 0.0) + amount
+
+    def remove(self, name: str, amount: float):
+        if not self.has(name, amount):
+            raise ValueError(f"Not enough {name} in inventory to remove {amount}")
+        self.contents[name] -= amount
+        if self.contents[name] <= 0:
+            del self.contents[name]
+
+    def has(self, name: str, amount: float) -> bool:
+        return self.contents.get(name, 0.0) >= amount
+
+    def __repr__(self):
+        return f"ConsumableInventory({self.contents})"
 
 
 # ===============================================================
@@ -434,18 +473,29 @@ def equipment_inventory_from_dict(data: list) -> EquipmentInventory:
     return inventory
 
 
+def consumable_inventory_from_dict(data: dict) -> ConsumableInventory:
+    """Build a ConsumableInventory from a {name: amount} mapping."""
+    inventory = ConsumableInventory()
+    for name, amount in data.items():
+        inventory.add(name, amount)
+    return inventory
+
+
 def load_starting_inventories(
     path: str, species_catalog_path: str | None = None,
-) -> tuple[ChemicalInventory, EquipmentInventory]:
+) -> tuple[ChemicalInventory, EquipmentInventory, ConsumableInventory]:
     """
-    Load the player's default starting chemicals + equipment from a JSON
-    file shaped like:
+    Load the player's default starting chemicals, equipment, and
+    consumable supplies from a JSON file shaped like:
         {"chemicals": {"48% hydrobromic acid": 700.0, ...},
-         "equipment": [{"type": ..., "name": ...}, ...]}
+         "equipment": [{"type": ..., "name": ...}, ...],
+         "consumables": {"silica": 50.0}}
     where each chemical amount is in native units (grams/mL) per the
-    species catalog. species_catalog_path defaults to "chemicals.json" in
-    the same directory as `path`, since a starting loadout and its species
-    catalog are meant to travel together.
+    species catalog, and each consumable amount is in its own native unit
+    (also grams/mL, but with no species definition needed). "consumables"
+    may be omitted entirely (an empty ConsumableInventory). species_catalog_path
+    defaults to "chemicals.json" in the same directory as `path`, since a
+    starting loadout and its species catalog are meant to travel together.
     """
     if species_catalog_path is None:
         species_catalog_path = os.path.join(os.path.dirname(path), "chemicals.json")
@@ -455,4 +505,5 @@ def load_starting_inventories(
     species_catalog = load_species_catalog(species_catalog_path)
     chemicals = chemical_inventory_from_dict(data.get("chemicals", {}), species_catalog)
     equipment = equipment_inventory_from_dict(data.get("equipment", []))
-    return chemicals, equipment
+    consumables = consumable_inventory_from_dict(data.get("consumables", {}))
+    return chemicals, equipment, consumables

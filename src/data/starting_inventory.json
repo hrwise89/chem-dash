@@ -2,7 +2,8 @@
   "chemicals": {
     "48% hydrobromic acid": 700.0,
     "ethanol": 350.0,
-    "sodium cyanide": 100.0
+    "sodium cyanide": 100.0,
+    "diethyl ether": 1000.0
   },
   "equipment": [
     {"type": "rb_flask", "name": "125 mL RB Flask", "capacity": 125.0},
@@ -22,6 +23,11 @@
     {"type": "stir_bar", "name": "Stir Bar"},
     {"type": "magnetic_stirrer", "name": "Magnetic Stirrer"},
     {"type": "magnetic_stirrer", "name": "Magnetic Stirrer"},
-    {"type": "magnetic_stirrer", "name": "Magnetic Stirrer"}
-  ]
+    {"type": "magnetic_stirrer", "name": "Magnetic Stirrer"},
+    {"type": "glass_column", "name": "Glass Column"},
+    {"type": "glass_column", "name": "Glass Column"}
+  ],
+  "consumables": {
+    "silica": 50.0
+  }
 }
