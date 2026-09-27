@@ -315,6 +315,31 @@ class TestPurify(unittest.TestCase):
             yields.append(y)
         self.assertGreater(len(set(yields)), 1)
 
+    def test_purifying_the_full_slider_max_does_not_reject_on_rounding(self):
+        # Regression test: a crude stock whose mass-in-grams (native amount
+        # * a non-round density) doesn't land on a tidy decimal used to
+        # read back, after the mass_g -> native_amount round-trip, as
+        # "more than we have" and get rejected -- even though the slider
+        # offered exactly this amount as its max. 12.26 mL * density 1.46
+        # = 17.9104 g, matching a real bug report.
+        inventory = ChemicalInventory(species_catalog={
+            "ethyl bromide": ChemicalSpecies(
+                name="ethyl bromide", state="liquid", molarity=1000.0, density=1.46,
+            ),
+        })
+        inventory.add("ethyl bromide (crude)", 12.26)
+        available_mass_g = mass_grams(inventory, "ethyl bromide (crude)", 12.26)
+        max_selectable = available_slider_values("bench", available_mass_g)[-1]
+        self.assertAlmostEqual(max_selectable, available_mass_g, places=6)
+
+        # Purifying exactly the slider's reported max must succeed, not
+        # raise "Can't purify X g (have X g)".
+        purify(
+            "bench", DISTILLATION, inventory, self.equipment, self.consumables, self.clock,
+            "ethyl bromide (crude)", max_selectable, rng=self.rng,
+        )
+        self.assertNotIn("ethyl bromide (crude)", inventory.contents)  # fully consumed
+
 
 if __name__ == "__main__":
     unittest.main()

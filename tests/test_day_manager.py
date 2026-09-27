@@ -69,6 +69,33 @@ class TestDayManager(unittest.TestCase):
         self.clock.advance(3.0)
         self.assertAlmostEqual(self.days.hours_into_day(self.clock), 3.0)
 
+    def test_go_home_advances_the_game_clock_overnight(self):
+        # Leaving after only 6 active hours should still let the whole
+        # rest of the 24-hour calendar day (the overnight sleep) pass on
+        # GameClock, not leave it standing still -- otherwise nothing
+        # scheduled against it (a reaction's finish time) can ever
+        # complete while the player is away for the night.
+        self.clock.advance(6.0)
+        self.days.go_home(self.clock)
+        self.assertAlmostEqual(self.clock.now(), 24.0)
+
+    def test_pass_out_advances_the_game_clock_across_both_skipped_days(self):
+        self.clock.advance(PASS_OUT_AFTER_HOURS)
+        self.days.pass_out(self.clock)
+        self.assertAlmostEqual(self.clock.now(), 48.0)
+
+    def test_a_reaction_length_overnight_gap_is_enough_to_finish_it(self):
+        # A reaction started 10 active hours into the day (well within the
+        # 14-hour pass-out budget), needing 8 hours total, should read as
+        # finished once the player has gone home for the night -- it
+        # couldn't possibly finish before that if the clock never advanced
+        # overnight.
+        self.clock.advance(10.0)
+        start_time = self.clock.now()
+        reaction_duration = 8.0
+        self.days.go_home(self.clock)
+        self.assertGreaterEqual(self.clock.now(), start_time + reaction_duration)
+
 
 class TestClockTimeString(unittest.TestCase):
 

@@ -20,6 +20,14 @@ from game_clock import GameClock
 SLEEPY_AFTER_HOURS = 12.0
 PASS_OUT_AFTER_HOURS = 14.0
 
+# A calendar day is 24 hours on GameClock's timeline even though a
+# player's active-hours budget within it is much shorter -- going home
+# (or passing out) advances the clock to this boundary so the rest of the
+# day/night actually elapses in-game (see _advance_overnight below),
+# letting anything scheduled against GameClock -- a reaction's finish
+# time -- complete overnight instead of time silently standing still.
+HOURS_PER_CALENDAR_DAY = 24.0
+
 # The in-game calendar: day 1 starts at 8:00 AM on this date. Purely
 # flavor -- nothing reads real wall-clock time here, just day_number/
 # hours_into_day from DayManager/GameClock.
@@ -68,8 +76,13 @@ class DayManager:
         return self.hours_into_day(game_clock) >= PASS_OUT_AFTER_HOURS
 
     def go_home(self, game_clock: GameClock) -> int:
-        """End the day normally (the player used the door). Returns the
+        """End the day normally (the player used the door). Advances
+        game_clock through the rest of the calendar day and the night's
+        sleep, so anything scheduled against it (a reaction's finish
+        time) can complete overnight even though the player wasn't
+        walking the lab floor to tick the clock themselves. Returns the
         new current_day."""
+        self._advance_overnight(game_clock, calendar_days=1)
         self.current_day += 1
         self.day_start_time = game_clock.now()
         return self.current_day
@@ -77,7 +90,19 @@ class DayManager:
     def pass_out(self, game_clock: GameClock) -> int:
         """Force-end the day because the player stayed out too long --
         skips the following day entirely as the cost of passing out.
-        Returns the new current_day."""
+        Advances game_clock the same way go_home() does, just across the
+        two calendar days this costs. Returns the new current_day."""
+        self._advance_overnight(game_clock, calendar_days=2)
         self.current_day += 2
         self.day_start_time = game_clock.now()
         return self.current_day
+
+    def _advance_overnight(self, game_clock: GameClock, calendar_days: int) -> None:
+        """Push game_clock forward to the next HOURS_PER_CALENDAR_DAY
+        boundary (or `calendar_days` boundaries out, for a passed-out
+        multi-day skip), rather than leaving it exactly where it was --
+        otherwise no in-game time would ever pass between one day ending
+        and the next beginning."""
+        hours_into_day = self.hours_into_day(game_clock)
+        remaining = calendar_days * HOURS_PER_CALENDAR_DAY - hours_into_day
+        game_clock.advance(max(0.0, remaining))

@@ -226,8 +226,14 @@ def available_slider_values(scale_key: str, available_mass_g: float) -> list[flo
     cap = min(available_mass_g, all_values[-1])
     if cap < all_values[0] - 1e-9:
         return []  # not even enough for the smallest notch
+    # Deliberately NOT rounded: available_mass_g came from a
+    # mass_grams()/native_amount_for_mass() round-trip through a
+    # (possibly non-integer) density, so rounding it here would silently
+    # introduce enough drift that converting it back in purify() reads as
+    # "more than we actually have" and rejects the player's own on-hand
+    # amount (see purify()'s have_native comparison tolerance).
     values = [v for v in all_values if v <= cap - 1e-9]
-    values.append(round(cap, 6))
+    values.append(cap)
     return values
 
 
@@ -270,9 +276,19 @@ def purify(
 
     native_amount = native_amount_for_mass(inventory, crude_name, mass_g)
     have_native = inventory.contents.get(crude_name, 0.0)
-    if native_amount > have_native + 1e-9:
+    # A relative (not just fixed 1e-9) tolerance: mass_g is typically the
+    # slider's max value, which is have_native run through a
+    # mass_grams()/native_amount_for_mass() round-trip via density -- with
+    # a non-round density that reintroduces enough floating-point drift to
+    # read as "more than we have" at a fixed epsilon, wrongly rejecting
+    # the player's own full on-hand amount. When it's this close, treat it
+    # as exactly what's on hand rather than leave a dust-sized negative
+    # remainder in inventory.
+    tolerance = max(1e-9, have_native * 1e-6)
+    if native_amount > have_native + tolerance:
         have_mass_g = mass_grams(inventory, crude_name, have_native)
         raise ValueError(f"Can't purify {mass_g:.3f} g of {crude_name} (have {have_mass_g:.3f} g).")
+    native_amount = min(native_amount, have_native)
 
     silica_g, solvent_ml = method.cost(mass_g)
     if silica_g > 0 and not consumables.has(SILICA_NAME, silica_g):
