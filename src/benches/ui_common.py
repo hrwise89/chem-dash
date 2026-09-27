@@ -1,12 +1,13 @@
 """
 Shared building blocks for the lab's bench views (ReactionBenchView,
 PurifyBenchView, and future ones like it): a bench sprite, a scrollable or
-centered menu, an on-screen status message, and text elision so labels
+centered menu, an on-screen status message, and word-wrapping so labels
 never run off the edge of the screen.
 """
 
 import arcade
-from settings import SCREEN_WIDTH, SCREEN_HEIGHT
+
+from settings import SCREEN_HEIGHT, SCREEN_WIDTH
 
 # ---- Shared layout ----
 # Every bench view puts its bench sprite in the same strip at the top of
@@ -68,28 +69,36 @@ class TextPool:
         return len(self._pool)
 
 
-def elide_to_width(text: str, max_width: float, font_size: int = 16) -> str:
+def wrap_to_width(text: str, max_width: float, font_size: int = 16) -> list[str]:
     """
-    Truncate `text` with a trailing ellipsis so it renders no wider than
-    max_width pixels at font_size, using a scratch arcade.Text to measure
-    (arcade.Text.content_width needs an active window, so this can't be
-    computed without one -- fine here since it's only ever called from
-    on_draw). Returns the text unchanged if it already fits.
+    Word-wrap `text` into however many lines it takes to keep each one no
+    wider than max_width pixels at font_size, using a scratch arcade.Text to
+    measure (arcade.Text.content_width needs an active window, so this can't
+    be computed without one -- fine here since it's only ever called from
+    on_draw). Returns [text] unchanged if it already fits on one line.
+
+    A single word wider than max_width on its own is kept whole rather than
+    split mid-word -- rare (a very long chemical name at a narrow width) and
+    a mid-word break reads worse than a slightly-too-wide line.
     """
     probe = arcade.Text(text, 0, 0, arcade.color.BLACK, font_size=font_size)
     if probe.content_width <= max_width:
-        return text
+        return [text]
 
-    # Shrink one character at a time until "<text>…" fits. Recomputing
-    # content_width every character is a bit brute-force, but these are
-    # short menu labels drawn a handful of times per frame, not a hot path.
-    truncated = text
-    while truncated:
-        probe.text = truncated + "…"
-        if probe.content_width <= max_width:
-            return truncated + "…"
-        truncated = truncated[:-1]
-    return "…"
+    words = text.split(" ")
+    lines = []
+    current = ""
+    for word in words:
+        candidate = f"{current} {word}".strip()
+        probe.text = candidate
+        if probe.content_width <= max_width or not current:
+            current = candidate
+        else:
+            lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    return lines
 
 
 class BenchView(arcade.View):
@@ -191,10 +200,11 @@ class BenchView(arcade.View):
 
     def draw_scrollable_list(self, labels: list[str], empty_message: str = "(nothing here yet)"):
         """
-        A left-aligned list windowed to MAX_VISIBLE_ROWS around
-        self.scroll_offset, highlighting self.cursor_index, eliding labels
-        that would otherwise run off the right edge, and showing an
-        "X-Y of N" indicator once the list is longer than one screenful.
+        A left-aligned list windowed to MAX_VISIBLE_ROWS *items* (not
+        wrapped lines) around self.scroll_offset, highlighting
+        self.cursor_index, word-wrapping any label too long for one line
+        rather than truncating it, and showing an "X-Y of N" indicator once
+        the list is longer than one screenful.
         """
         if not labels:
             self.scroll_indicator_text.text = ""
@@ -204,16 +214,24 @@ class BenchView(arcade.View):
             return
 
         visible = labels[self.scroll_offset:self.scroll_offset + MAX_VISIBLE_ROWS]
-        # Reserve room for the "> "/"  " prefix so long labels truncate
-        # before running off the right edge of the screen.
+        # Reserve room for the "> "/"  " prefix so a wrapped line still fits
+        # inside the screen alongside it.
         max_label_width = SCREEN_WIDTH - LIST_LEFT_X - LIST_RIGHT_MARGIN - 20
+        text_index = 0
+        y = LIST_START_Y
         for row, label in enumerate(visible):
             i = self.scroll_offset + row  # actual index into `labels`
             color = arcade.color.RED if i == self.cursor_index else arcade.color.BLACK
-            prefix = "> " if i == self.cursor_index else "  "
-            fitted = elide_to_width(label, max_label_width, font_size=LIST_ROW_FONT_SIZE)
-            self.text_pool.get(row, f"{prefix}{fitted}", LIST_LEFT_X,
-                LIST_START_Y - row * LIST_ROW_HEIGHT, color, font_size=LIST_ROW_FONT_SIZE).draw()
+            wrapped_lines = wrap_to_width(label, max_label_width, font_size=LIST_ROW_FONT_SIZE)
+            for line_num, line in enumerate(wrapped_lines):
+                if line_num == 0:
+                    prefix = "> " if i == self.cursor_index else "  "
+                else:
+                    prefix = "   "  # continuation lines indent past the prefix, no marker
+                self.text_pool.get(text_index, f"{prefix}{line}", LIST_LEFT_X, y,
+                    color, font_size=LIST_ROW_FONT_SIZE).draw()
+                y -= LIST_ROW_HEIGHT
+                text_index += 1
 
         if len(labels) > MAX_VISIBLE_ROWS:
             last_shown = min(self.scroll_offset + MAX_VISIBLE_ROWS, len(labels))

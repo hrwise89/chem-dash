@@ -1,6 +1,8 @@
 """
 The computer bench: order chemicals from the catalogue, and browse/accept/
-fulfill contracts ("orders") for products the player can already produce.
+reject contract offers ("orders"). Once accepted, an order becomes an open
+order tracked in the reaction bench's notebook -- shipping (and payment)
+happens at the shipping bench, not here.
 """
 
 import arcade
@@ -19,9 +21,9 @@ class ComputerBenchView(BenchView):
 
     def __init__(self, window, lab_view):
         super().__init__(window, lab_view, title="Computer")
-        # "overview" | "catalogue" | "offers" | "accepted"
+        # "overview" | "catalogue" | "offers"
         self.mode = "overview"
-        self.sections = ["catalogue", "offers", "accepted"]
+        self.sections = ["catalogue", "offers"]
 
     # ---- what's in each section ----
 
@@ -30,8 +32,6 @@ class ComputerBenchView(BenchView):
             return self._catalogue_rows()
         if self.mode == "offers":
             return [(self._offer_label(c), c) for c in self.window.contract_board.available]
-        if self.mode == "accepted":
-            return [(self._accepted_label(c), c) for c in self.window.contract_board.accepted]
         return []
 
     def _catalogue_rows(self):
@@ -49,12 +49,8 @@ class ComputerBenchView(BenchView):
         return rows
 
     def _offer_label(self, contract) -> str:
-        return f"{contract.title} -- deliver {contract.amount:.2f} mol {contract.product} for ${contract.reward:.2f}"
-
-    def _accepted_label(self, contract) -> str:
-        have = self.window.chemical_inventory.available_moles(contract.product)
-        return (f"{contract.title} -- need {contract.amount:.2f} mol {contract.product} "
-                f"(have {have:.2f} mol) for ${contract.reward:.2f}")
+        product_desc = f"pure {contract.product}" if contract.requires_pure else contract.product
+        return f"{contract.title} -- deliver {contract.amount:.2f} mol {product_desc} for ${contract.reward:.2f}"
 
     # ---- drawing ----
 
@@ -86,8 +82,6 @@ class ComputerBenchView(BenchView):
             self.draw_instructions("UP/DOWN to browse, ENTER to buy, ESC to go back")
         elif self.mode == "offers":
             self.draw_instructions("UP/DOWN to browse, ENTER to accept, R to reject, ESC to go back")
-        elif self.mode == "accepted":
-            self.draw_instructions("UP/DOWN to browse, ENTER to deliver, ESC to go back")
         else:
             self.draw_instructions("UP/DOWN to browse, ESC to go back")
 
@@ -138,8 +132,6 @@ class ComputerBenchView(BenchView):
             self.try_buy(obj)
         elif self.mode == "offers":
             self.try_accept(obj)
-        elif self.mode == "accepted":
-            self.try_fulfill(obj)
 
     def try_buy(self, name: str):
         inventory = self.window.chemical_inventory
@@ -156,14 +148,4 @@ class ComputerBenchView(BenchView):
         self.window.contract_board.accept(contract.contract_id)
         self.reset_cursor()
         logger.info("Accepted contract '%s'", contract.title)
-        self.show_message(f"Accepted: {contract.title}", arcade.color.DARK_GREEN)
-
-    def try_fulfill(self, contract):
-        try:
-            self.window.contract_board.fulfill(contract.contract_id, self.window.chemical_inventory, self.window.wallet)
-        except ValueError as e:
-            self.show_message(str(e), arcade.color.RED)
-            return
-        self.reset_cursor()
-        logger.info("Fulfilled contract '%s' for $%.2f", contract.title, contract.reward)
-        self.show_message(f"Delivered: {contract.title} (+${contract.reward:.2f})", arcade.color.DARK_GREEN)
+        self.show_message(f"Accepted: {contract.title} -- check the notebook for open orders", arcade.color.DARK_GREEN)

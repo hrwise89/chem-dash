@@ -75,6 +75,7 @@ class TestContractBoard(unittest.TestCase):
         contract = self.board.offer("Test job", "ethyl bromide", 1.0, 20.0)
         self.assertIn(contract, self.board.available)
         self.assertIsInstance(contract, Contract)
+        self.assertFalse(contract.requires_pure)
 
     def test_accept_moves_from_available_to_accepted(self):
         contract = self.board.offer("Test job", "ethyl bromide", 1.0, 20.0)
@@ -93,31 +94,89 @@ class TestContractBoard(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.board.accept("nope")
 
-    def test_fulfill_pays_and_consumes_product(self):
+    # --- Shipping (consumes product immediately, payment deferred) ---
+
+    def test_ship_moves_to_in_transit_and_consumes_product_but_does_not_pay(self):
         contract = self.board.offer("Test job", "ethyl bromide", 1.0, 20.0)
         self.board.accept(contract.contract_id)
         self.inventory.add_moles("ethyl bromide", 2.0)
 
-        fulfilled = self.board.fulfill(contract.contract_id, self.inventory, self.wallet)
-        self.assertEqual(fulfilled, contract)
+        shipped = self.board.ship(contract.contract_id, self.inventory)
+        self.assertEqual(shipped, contract)
         self.assertNotIn(contract, self.board.accepted)
-        self.assertEqual(self.wallet.balance, 20.0)
+        self.assertIn(contract, self.board.in_transit)
+        self.assertEqual(self.wallet.balance, 0.0)  # not paid yet
         self.assertAlmostEqual(self.inventory.moles_of("ethyl bromide"), 1.0, places=6)
 
-    def test_fulfill_without_enough_product_raises_and_changes_nothing(self):
+    def test_ship_without_enough_product_raises_and_changes_nothing(self):
         contract = self.board.offer("Test job", "ethyl bromide", 1.0, 20.0)
         self.board.accept(contract.contract_id)
         self.inventory.add_moles("ethyl bromide", 0.2)
 
         with self.assertRaises(ValueError):
-            self.board.fulfill(contract.contract_id, self.inventory, self.wallet)
+            self.board.ship(contract.contract_id, self.inventory)
         self.assertIn(contract, self.board.accepted)
-        self.assertEqual(self.wallet.balance, 0.0)
+        self.assertAlmostEqual(self.inventory.moles_of("ethyl bromide"), 0.2, places=6)
 
-    def test_fulfill_not_accepted_raises(self):
+    def test_ship_not_accepted_raises(self):
         contract = self.board.offer("Test job", "ethyl bromide", 1.0, 20.0)
         with self.assertRaises(ValueError):
-            self.board.fulfill(contract.contract_id, self.inventory, self.wallet)
+            self.board.ship(contract.contract_id, self.inventory)
+
+    def test_crude_order_accepts_crude_product(self):
+        contract = self.board.offer("Crude order", "ethyl bromide", 1.0, 20.0, requires_pure=False)
+        self.board.accept(contract.contract_id)
+        self.inventory.add_moles("ethyl bromide (crude)", 1.0)
+
+        self.board.ship(contract.contract_id, self.inventory)
+        self.assertAlmostEqual(self.inventory.moles_of("ethyl bromide (crude)"), 0.0, places=6)
+
+    def test_crude_order_spends_crude_before_pure(self):
+        contract = self.board.offer("Crude order", "ethyl bromide", 1.0, 20.0, requires_pure=False)
+        self.board.accept(contract.contract_id)
+        self.inventory.add_moles("ethyl bromide (crude)", 0.4)
+        self.inventory.add_moles("ethyl bromide", 1.0)
+
+        self.board.ship(contract.contract_id, self.inventory)
+        # Crude fully spent first, then only the remaining 0.6 mol taken from pure.
+        self.assertAlmostEqual(self.inventory.moles_of("ethyl bromide (crude)"), 0.0, places=6)
+        self.assertAlmostEqual(self.inventory.moles_of("ethyl bromide"), 0.4, places=6)
+
+    def test_pure_order_rejects_crude_only_stock(self):
+        contract = self.board.offer("Pure order", "ethyl bromide", 1.0, 20.0, requires_pure=True)
+        self.board.accept(contract.contract_id)
+        self.inventory.add_moles("ethyl bromide (crude)", 5.0)  # plenty of crude, but it doesn't count
+
+        with self.assertRaises(ValueError):
+            self.board.ship(contract.contract_id, self.inventory)
+        self.assertIn(contract, self.board.accepted)
+
+    def test_pure_order_accepts_pure_stock(self):
+        contract = self.board.offer("Pure order", "ethyl bromide", 1.0, 20.0, requires_pure=True)
+        self.board.accept(contract.contract_id)
+        self.inventory.add_moles("ethyl bromide", 1.0)
+
+        self.board.ship(contract.contract_id, self.inventory)
+        self.assertIn(contract, self.board.in_transit)
+
+    # --- Overnight payment ---
+
+    def test_process_overnight_pays_and_moves_to_history(self):
+        contract = self.board.offer("Test job", "ethyl bromide", 1.0, 20.0)
+        self.board.accept(contract.contract_id)
+        self.inventory.add_moles("ethyl bromide", 1.0)
+        self.board.ship(contract.contract_id, self.inventory)
+
+        paid = self.board.process_overnight(self.wallet)
+        self.assertEqual(paid, [contract])
+        self.assertEqual(self.wallet.balance, 20.0)
+        self.assertEqual(self.board.in_transit, [])
+        self.assertIn(contract, self.board.history)
+
+    def test_process_overnight_with_nothing_in_transit_is_a_no_op(self):
+        paid = self.board.process_overnight(self.wallet)
+        self.assertEqual(paid, [])
+        self.assertEqual(self.wallet.balance, 0.0)
 
 
 class TestLoadContractOffers(unittest.TestCase):

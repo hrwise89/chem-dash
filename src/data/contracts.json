@@ -1,12 +1,14 @@
 {
   "Polymer lab needs ethyl bromide": {
-    "product": "ethyl bromide (crude)",
+    "product": "ethyl bromide",
+    "requires_pure": false,
     "amount": 0.5,
     "reward": 40.0
   },
-  "Grad student needs ethyl cyanide sample": {
-    "product": "ethyl cyanide (crude)",
+  "Grad student needs pure ethyl cyanide": {
+    "product": "ethyl cyanide",
+    "requires_pure": true,
     "amount": 0.3,
-    "reward": 35.0
+    "reward": 55.0
   }
 }

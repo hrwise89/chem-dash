@@ -63,6 +63,13 @@ def pure_name_for(crude_name: str) -> str:
     return crude_name[: -len(CRUDE_SUFFIX)]
 
 
+def crude_name_for(pure_name: str) -> str:
+    """'ethyl bromide' -> 'ethyl bromide (crude)'."""
+    if is_crude(pure_name):
+        raise ValueError(f"'{pure_name}' is already a crude name")
+    return pure_name + CRUDE_SUFFIX
+
+
 def canonical_species_name(name: str) -> str:
     """The name to look up in the species catalog: crude and pure forms of
     the same substance share one definition, so a crude name resolves to

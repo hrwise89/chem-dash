@@ -21,6 +21,14 @@ INDICATOR_SIZE = 20
 INDICATOR_GAP = 8
 INDICATOR_MAX_SHOWN = 8
 
+# The notebook is one bench section with its own tab menu, rather than
+# separate top-level sections -- (tab label, internal mode) pairs.
+NOTEBOOK_TABS = [
+    ("Active Reactions", "notebook_active"),
+    ("Open Orders", "notebook_orders"),
+    ("History", "notebook_history"),
+]
+
 # ---- Amount-picker slider ----
 SLIDER_WIDTH = 500
 SLIDER_HEIGHT = 26
@@ -33,14 +41,16 @@ class ReactionBenchView(BenchView):
 
     def __init__(self, window, lab_view):
         super().__init__(window, lab_view, title="Reaction Bench")
-        # "overview" | "equipment" | "recipes" | "notebook" | "history"
-        # | "inventory" | "select_vessel" | "select_amount" (the last two
-        # are the sub-flow for starting a reaction: pick a recipe -> pick a
-        # vessel -> pick an amount. "select_amount" is a single screen with
-        # two rows -- "Max" and a hand-adjustable slider -- rather than
-        # separate screens.)
+        # "overview" | "equipment" | "recipes" | "notebook" | "inventory"
+        # | "select_vessel" | "select_amount" | "notebook_active" |
+        # "notebook_orders" | "notebook_history" ("notebook" is a tab menu
+        # over the last three -- see NOTEBOOK_TABS. "select_vessel"/
+        # "select_amount" are the sub-flow for starting a reaction: pick a
+        # recipe -> pick a vessel -> pick an amount. "select_amount" is a
+        # single screen with two rows -- "Max" and a hand-adjustable
+        # slider -- rather than separate screens.)
         self.mode = "overview"
-        self.sections = ["equipment", "recipes", "notebook", "history", "inventory"]
+        self.sections = ["equipment", "recipes", "notebook", "inventory"]
 
         self.keys_held: set[int] = set()
 
@@ -73,16 +83,22 @@ class ReactionBenchView(BenchView):
                 labels.append((f"{name}  [ratio: {ratio_desc}]", (name, definition)))
             return labels
 
-        if self.mode == "notebook":
+        if self.mode == "notebook_active":
             clock = self.window.game_clock
             procs = self.window.reaction_engine.active_processes.values()
             return [(f"{p.reaction_name} ({p.time_remaining(clock):.1f}h left)", p) for p in procs]
 
-        if self.mode == "history":
-            # Most recent first, so the player's latest run of a recipe is
-            # the first thing they see when checking what yield to expect.
-            entries = list(reversed(self.window.reaction_engine.history))
-            return [(self._history_label(entry), entry) for entry in entries]
+        if self.mode == "notebook_orders":
+            board = self.window.contract_board
+            return [(self._open_order_label(c), c) for c in board.accepted]
+
+        if self.mode == "notebook_history":
+            # Most recent first within each kind, so the player's latest
+            # result is the first thing they see when checking what to
+            # expect next time.
+            reaction_rows = [(self._history_label(e), e) for e in reversed(self.window.reaction_engine.history)]
+            order_rows = [(self._order_history_label(c), c) for c in reversed(self.window.contract_board.history)]
+            return reaction_rows + order_rows
 
         if self.mode == "inventory":
             inventory = self.window.chemical_inventory
@@ -92,8 +108,20 @@ class ReactionBenchView(BenchView):
 
     def _history_label(self, entry) -> str:
         solvent_desc = entry.solvent or "no solvent"
-        return (f"{entry.reaction_name} -- {entry.yield_fraction * 100:.0f}% yield "
+        return (f"[Reaction] {entry.reaction_name} -- {entry.yield_fraction * 100:.0f}% yield "
                 f"(t={entry.start_time:.1f}h, {solvent_desc}, {entry.temperature:.0f}C, {entry.scheduled_hours:.1f}h)")
+
+    def _open_order_label(self, contract) -> str:
+        board = self.window.contract_board
+        have = board.available_product_moles(contract, self.window.chemical_inventory)
+        product_desc = f"pure {contract.product}" if contract.requires_pure else contract.product
+        ready = "ready to ship" if have + 1e-9 >= contract.amount else "not enough product yet"
+        return (f"{contract.title} -- need {contract.amount:.2f} mol {product_desc} "
+                f"(have {have:.2f} mol) for ${contract.reward:.2f} ({ready})")
+
+    def _order_history_label(self, contract) -> str:
+        product_desc = f"pure {contract.product}" if contract.requires_pure else contract.product
+        return f"[Order] {contract.title} -- delivered {contract.amount:.2f} mol {product_desc}, paid ${contract.reward:.2f}"
 
     def _equipment_rows(self):
         """
@@ -142,6 +170,8 @@ class ReactionBenchView(BenchView):
 
         if self.mode == "overview":
             self.draw_overview()
+        elif self.mode == "notebook":
+            self.draw_notebook_tabs()
         elif self.mode == "select_vessel":
             self.draw_vessel_picker()
         elif self.mode == "select_amount":
@@ -178,12 +208,23 @@ class ReactionBenchView(BenchView):
         self.draw_centered_menu([(section, True) for section in self.sections])
         self.draw_instructions("UP/DOWN to choose, ENTER to select, ESC to leave bench")
 
+    def draw_notebook_tabs(self):
+        self.draw_title("Notebook")
+        self.draw_centered_menu([(label, True) for label, _ in NOTEBOOK_TABS])
+        self.draw_instructions("UP/DOWN to choose, ENTER to select, ESC to go back")
+
+    _SECTION_TITLES = {
+        "notebook_active": "ACTIVE REACTIONS",
+        "notebook_orders": "OPEN ORDERS",
+        "notebook_history": "HISTORY",
+    }
+
     def draw_section(self):
-        self.draw_title(self.mode.upper())
+        self.draw_title(self._SECTION_TITLES.get(self.mode, self.mode.upper()))
         items = self.current_list()
         self.draw_scrollable_list([label for label, _ in items])
 
-        if self.mode == "notebook":
+        if self.mode == "notebook_active":
             self.draw_instructions("UP/DOWN to choose, ENTER to collect, F to warp time, ESC to go back")
         elif self.mode == "recipes":
             self.draw_instructions("UP/DOWN to choose, ENTER to start, ESC to go back")
@@ -196,6 +237,8 @@ class ReactionBenchView(BenchView):
         self.keys_held.add(key)
         if self.mode == "overview":
             self.handle_overview_keys(key)
+        elif self.mode == "notebook":
+            self.handle_notebook_tab_keys(key)
         elif self.mode == "select_vessel":
             self.handle_vessel_keys(key)
         elif self.mode == "select_amount":
@@ -219,6 +262,19 @@ class ReactionBenchView(BenchView):
             logger.debug("Reaction bench: left the bench, returning to lab floor")
             self.window.show_view(self.lab_view)
 
+    def handle_notebook_tab_keys(self, key):
+        if key in (arcade.key.UP, arcade.key.W):
+            self.cursor_index = (self.cursor_index - 1) % len(NOTEBOOK_TABS)
+        elif key in (arcade.key.DOWN, arcade.key.S):
+            self.cursor_index = (self.cursor_index + 1) % len(NOTEBOOK_TABS)
+        elif key in (arcade.key.ENTER, arcade.key.SPACE):
+            _, self.mode = NOTEBOOK_TABS[self.cursor_index]
+            self.reset_cursor()
+            logger.debug("Reaction bench: entered notebook tab '%s'", self.mode)
+        elif key == arcade.key.ESCAPE:
+            self.mode = "overview"
+            self.reset_cursor()
+
     def handle_section_keys(self, key):
         items = self.current_list()
         if key in (arcade.key.UP, arcade.key.W) and items:
@@ -229,24 +285,29 @@ class ReactionBenchView(BenchView):
             self.scroll_to_show_cursor()
         elif key == arcade.key.ENTER and items:
             self.activate_selected(items[self.cursor_index])
-        elif key == arcade.key.F and self.mode == "notebook" and items:
+        elif key == arcade.key.F and self.mode == "notebook_active" and items:
             _, process = items[self.cursor_index]
             self.window.game_clock.advance_to(process.end_time)   # "warp to end"
             logger.info("Warped game clock to t=%.2fh for '%s'", process.end_time, process.reaction_name)
             self.show_message(f"Warped time to {process.end_time:.1f}h", arcade.color.DARK_YELLOW)
         elif key == arcade.key.ESCAPE:
-            logger.debug("Reaction bench: back to overview from '%s'", self.mode)
-            self.mode = "overview"
+            if self.mode.startswith("notebook_"):
+                logger.debug("Reaction bench: back to notebook tabs from '%s'", self.mode)
+                self.mode = "notebook"
+            else:
+                logger.debug("Reaction bench: back to overview from '%s'", self.mode)
+                self.mode = "overview"
             self.reset_cursor()
 
     def activate_selected(self, selected):
-        label, obj = selected
+        _, obj = selected
         if self.mode == "recipes":
             name, definition = obj
             self.begin_recipe_selection(name, definition)
-        elif self.mode == "notebook":
+        elif self.mode == "notebook_active":
             self.try_collect_reaction(obj)      # obj is a ReactionProcess
-        # "equipment" and "inventory" are read-only for now -- nothing to activate
+        # "equipment", "inventory", "notebook_orders", and "notebook_history"
+        # are read-only for now -- nothing to activate
 
     # ---- recipe-start sub-flow: pick a recipe -> a vessel -> an amount ----
 
@@ -260,11 +321,24 @@ class ReactionBenchView(BenchView):
         self.reset_cursor()
 
     def vessel_choices(self):
-        """(label, EquipmentItem) pairs for every free rb_flask."""
-        return [
-            (f"{item.name} ({item.capacity:.0f} mL)", item)
-            for item in self.window.equipment_inventory.available_items("rb_flask")
-        ]
+        """(label, EquipmentItem) pairs for every free rb_flask, each
+        previewing the max reaction scale that vessel would allow (see
+        reaction_scale_bounds) so the player can compare vessels before
+        committing to one, instead of finding out only after picking it."""
+        definition = self.pending_definition
+        inventory = self.window.chemical_inventory
+        ref = reference_reagent_for(definition)
+        rows = []
+        for item in self.window.equipment_inventory.available_items("rb_flask"):
+            bounds = reaction_scale_bounds(definition, inventory, item.capacity)
+            if bounds is None:
+                preview = "no chemicals for this reaction"
+            else:
+                _, max_moles, limiting_factor = bounds
+                native = self._native_amount_desc(ref, max_moles)
+                preview = f"max {max_moles:.2f} mol {ref} ({native}, limited by {limiting_factor})"
+            rows.append((f"{item.name} ({item.capacity:.0f} mL) -- {preview}", item))
+        return rows
 
     def draw_vessel_picker(self):
         self.draw_title("PICK A VESSEL")
@@ -514,7 +588,7 @@ class ReactionBenchView(BenchView):
                 game_clock=self.window.game_clock,
                 preferred_flask_id=self.pending_vessel.id,
             )
-            self.mode = "notebook"
+            self.mode = "notebook_active"
             self.reset_cursor()
             self.show_message("Reaction started.", arcade.color.DARK_GREEN)
         except (ValueError, EquipmentUnavailableError) as e:

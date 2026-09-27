@@ -5,6 +5,7 @@ from settings import (SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE, SPRITE_SCALING,
 from benches.computer_bench import ComputerBenchView
 from benches.purify_bench import PurifyBenchView
 from benches.reaction_bench import ReactionBenchView
+from benches.shipping_bench import ShippingBenchView
 from timer_manager import TimerManager, Timer
 from devtools import logger
 
@@ -144,6 +145,10 @@ class LabView(arcade.View):
 				"width": TILE_SIZE * 3, "height": TILE_SIZE,
 				"color": arcade.color.DARK_SLATE_BLUE, "action": "use the computer",
 				"opens": ComputerBenchView},
+			{"name": "bench_shipping_1", "x": TILE_SIZE * 10.5, "y": TILE_SIZE * 2.5,
+				"width": TILE_SIZE * 3, "height": TILE_SIZE,
+				"color": arcade.color.DARK_ORANGE, "action": "use the shipping desk",
+				"opens": ShippingBenchView},
 			# Additional benches here
 			{"name": "door_home", "x": DOOR_COL * TILE_SIZE + TILE_SIZE // 2,
 				"y": DOOR_ROW * TILE_SIZE + TILE_SIZE // 2,
@@ -282,6 +287,15 @@ class LabView(arcade.View):
 		self.player.target_x = self.player.center_x = DEFAULT_Y * TILE_SIZE + TILE_SIZE // 2
 		self.player.target_y = self.player.center_y = DEFAULT_X * TILE_SIZE + TILE_SIZE // 2
 		self.player.moving = False
+
+		# Shipments sent the day before are paid out as the new day starts --
+		# a one-day delay between shipping an order and getting paid for it.
+		paid = self.window.contract_board.process_overnight(self.window.wallet)
+		if paid:
+			total = sum(c.reward for c in paid)
+			logger.info("Overnight payments: %s (total $%.2f)", [c.title for c in paid], total)
+			message = f"{message} Payment received: ${total:.2f} ({len(paid)} order(s))."
+
 		self.show_status(message)
 
 	def show_status(self, text: str, duration: float = STATUS_MESSAGE_DURATION):
