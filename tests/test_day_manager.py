@@ -4,7 +4,13 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from day_manager import PASS_OUT_AFTER_HOURS, SLEEPY_AFTER_HOURS, DayManager
+from day_manager import (
+    PASS_OUT_AFTER_HOURS,
+    SLEEPY_AFTER_HOURS,
+    DayManager,
+    calendar_date_string,
+    clock_time_string,
+)
 from game_clock import GameClock
 
 
@@ -62,6 +68,39 @@ class TestDayManager(unittest.TestCase):
         self.days.go_home(self.clock)
         self.clock.advance(3.0)
         self.assertAlmostEqual(self.days.hours_into_day(self.clock), 3.0)
+
+
+class TestClockTimeString(unittest.TestCase):
+
+    def test_zero_hours_is_8am(self):
+        self.assertEqual(clock_time_string(0.0), "8:00 AM")
+
+    def test_half_hour_in(self):
+        self.assertEqual(clock_time_string(0.5), "8:30 AM")
+
+    def test_crosses_noon(self):
+        self.assertEqual(clock_time_string(4.0), "12:00 PM")
+
+    def test_afternoon(self):
+        self.assertEqual(clock_time_string(6.5), "2:30 PM")
+
+    def test_near_pass_out_threshold(self):
+        self.assertEqual(clock_time_string(PASS_OUT_AFTER_HOURS), "10:00 PM")
+
+    def test_wraps_past_midnight(self):
+        self.assertEqual(clock_time_string(16.0), "12:00 AM")
+
+
+class TestCalendarDateString(unittest.TestCase):
+
+    def test_day_one_is_start_date(self):
+        self.assertEqual(calendar_date_string(1), "03/29/2001")
+
+    def test_day_two_is_next_day(self):
+        self.assertEqual(calendar_date_string(2), "03/30/2001")
+
+    def test_crosses_month_boundary(self):
+        self.assertEqual(calendar_date_string(4), "04/01/2001")
 
 
 if __name__ == "__main__":

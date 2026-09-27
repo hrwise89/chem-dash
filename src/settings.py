@@ -8,14 +8,37 @@ SPRITE_SCALING = 4
 
 # Tile / Grid Settings
 TILE_SIZE = 32
-GRID_WIDTH = SCREEN_WIDTH // TILE_SIZE
-GRID_HEIGHT = SCREEN_HEIGHT // TILE_SIZE
+
+# The lab room (LabView's walkable interior) is deliberately smaller than
+# the window and recentered in it, with a status bar reserved above it and
+# a scrolling message box reserved below it -- see ROOM_ORIGIN_X/Y.
+ROOM_COLS = 20
+ROOM_ROWS = 10
+ROOM_WIDTH = ROOM_COLS * TILE_SIZE
+ROOM_HEIGHT = ROOM_ROWS * TILE_SIZE
+
+# GRID_WIDTH/GRID_HEIGHT are what LabView bounds player movement against --
+# kept as separate names (rather than using ROOM_COLS/ROOM_ROWS directly)
+# in case some future room isn't the same size as the "current" one.
+GRID_WIDTH = ROOM_COLS
+GRID_HEIGHT = ROOM_ROWS
+
+# Status bar (time/date/money, top of window) and message box (scrolling
+# status/prompt text, bottom of window) reserve fixed-height strips; the
+# room is centered in whatever vertical space is left between them, and
+# centered horizontally in the full window width.
+STATUS_BAR_HEIGHT = 40
+MESSAGE_BOX_HEIGHT = 110
+
+ROOM_ORIGIN_X = (SCREEN_WIDTH - ROOM_WIDTH) // 2
+ROOM_ORIGIN_Y = MESSAGE_BOX_HEIGHT + (SCREEN_HEIGHT - STATUS_BAR_HEIGHT - MESSAGE_BOX_HEIGHT - ROOM_HEIGHT) // 2
 
 # Player Settings
 PLAYER_COLOR = arcade.color.BLUE
 
 # Level Settings
 MAP_BACKGROUND_COLOR = arcade.color.LIGHT_BLUE
+OUTSIDE_ROOM_COLOR = arcade.color.BLACK
 
 # Time Settings
 # How many in-game hours pass per real second while walking around the lab

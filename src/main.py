@@ -18,6 +18,7 @@ from game_clock import GameClock  # noqa: E402
 from day_manager import DayManager  # noqa: E402
 from economy import ContractBoard, Wallet, load_contract_offers  # noqa: E402
 from devtools import install_crash_logging  # noqa: E402
+from message_log import MessageLog  # noqa: E402
 
 STARTING_BALANCE = 200.0
 
@@ -29,6 +30,7 @@ def main():
 	# Game clock
 	window.game_clock = GameClock()
 	window.day_manager = DayManager()
+	window.message_log = MessageLog()
 
 	# Money + contracts ("orders")
 	window.wallet = Wallet(STARTING_BALANCE)
