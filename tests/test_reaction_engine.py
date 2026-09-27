@@ -13,7 +13,16 @@ from inventory import (
     EquipmentInventory,
     EquipmentUnavailableError,
 )
-from reaction_engine import ReactionEngine, ReactionNotReadyError, batch_reagents_for_flask
+from reaction_engine import (
+    RECOMMENDED_MIN_FILL_FRACTION,
+    UNDERFILL_YIELD_PENALTY,
+    ReactionEngine,
+    ReactionNotReadyError,
+    reaction_scale_bounds,
+    reaction_volume_ml,
+    reagents_for_scale,
+    reference_reagent_for,
+)
 
 FULL_RIG = ["rb_flask", "condenser", "tubing", "heating_mantle", "stir_bar", "magnetic_stirrer"]
 
@@ -233,6 +242,62 @@ class TestReactionEngine(unittest.TestCase):
         )
         self.assertIn(small.id, process.equipment_ids)
 
+    def test_preferred_flask_id_overrides_best_fit(self):
+        # The player picked the big flask at the bench, even though the
+        # small one would also fit -- start_reaction should honor that.
+        inventory = self.make_inventory(HBr=1.0, ethanol=1.0)
+        equipment = EquipmentInventory()
+        big = equipment.add_item("rb_flask", "1 L RB Flask", capacity=5.0)
+        equipment.add_item("rb_flask", "100 mL RB Flask", capacity=2.0)
+        equipment.add_item("condenser", "Reflux Condenser")
+        equipment.add_item("tubing", "Rubber Tubing")
+        equipment.add_item("heating_mantle", "Heating Mantle")
+        equipment.add_item("stir_bar", "Stir Bar")
+        equipment.add_item("magnetic_stirrer", "Magnetic Stirrer")
+
+        process = self.engine.start_reaction(
+            inventory, equipment, {"HBr": 1.0, "ethanol": 1.0}, "neat", 20.0, 4.0, self.clock,
+            preferred_flask_id=big.id,
+        )
+        self.assertIn(big.id, process.equipment_ids)
+
+    def test_preferred_flask_id_too_small_is_rejected(self):
+        inventory = self.make_inventory(HBr=2.0, ethanol=2.0)
+        equipment = EquipmentInventory()
+        too_small = equipment.add_item("rb_flask", "100 mL RB Flask", capacity=1.0)
+        equipment.add_item("condenser", "Reflux Condenser")
+        equipment.add_item("tubing", "Rubber Tubing")
+        equipment.add_item("heating_mantle", "Heating Mantle")
+        equipment.add_item("stir_bar", "Stir Bar")
+        equipment.add_item("magnetic_stirrer", "Magnetic Stirrer")
+
+        with self.assertRaises(EquipmentUnavailableError):
+            self.engine.start_reaction(
+                inventory, equipment, {"HBr": 2.0, "ethanol": 2.0}, "neat", 20.0, 4.0, self.clock,
+                preferred_flask_id=too_small.id,
+            )
+
+    # --- Underfill yield penalty ---
+    def test_underfilled_flask_reduces_yield(self):
+        # 2 mL of reaction mixture (identity molarity, 1:1 ratio) in a 100 mL
+        # flask is well under RECOMMENDED_MIN_FILL_FRACTION (20 mL) -- should
+        # apply UNDERFILL_YIELD_PENALTY on top of the normal efficiency.
+        inventory = self.make_inventory(HBr=1.0, ethanol=1.0)
+        equipment = EquipmentInventory()
+        make_full_rig(equipment, flask_capacity=100.0)
+
+        products = self.run_to_completion(inventory, equipment, {"HBr": 1.0, "ethanol": 1.0}, "neat", 20.0, 4.0)
+        self.assertAlmostEqual(products["ethyl bromide (crude)"], 1.0 * UNDERFILL_YIELD_PENALTY, places=2)
+
+    def test_adequately_filled_flask_has_no_underfill_penalty(self):
+        # Same reaction, but sized to actually use the flask -- no penalty.
+        inventory = self.make_inventory(HBr=1.0, ethanol=1.0)
+        equipment = EquipmentInventory()
+        make_full_rig(equipment, flask_capacity=2.0 / RECOMMENDED_MIN_FILL_FRACTION)  # exactly at the recommended min
+
+        products = self.run_to_completion(inventory, equipment, {"HBr": 1.0, "ethanol": 1.0}, "neat", 20.0, 4.0)
+        self.assertAlmostEqual(products["ethyl bromide (crude)"], 1.0, places=2)
+
     def test_second_reaction_blocked_while_equipment_in_use(self):
         inventory = self.make_inventory(HBr=2.0, ethanol=2.0)
         equipment = EquipmentInventory()
@@ -291,21 +356,58 @@ class TestReactionEngine(unittest.TestCase):
         self.assertIn("heating_mantle", message)
         self.assertNotIn("tubing", message)  # tubing IS available, shouldn't be listed as missing
 
-    # --- Batch sizing ---
-    def test_batch_reagents_scales_to_flask_capacity(self):
+    # --- Reference-reagent scaling & vessel-based sizing ---
+    def test_reference_reagent_defaults_to_first_reactant(self):
         definition = self.engine.reaction_db["HBr + ethanol → ethyl bromide"]
-        batch = batch_reagents_for_flask(definition, flask_capacity=4.0)
-        self.assertAlmostEqual(sum(batch.values()), 4.0, places=6)
-        # Original 1:1 ratio should be preserved
-        self.assertAlmostEqual(batch["HBr"], batch["ethanol"], places=6)
+        # Explicitly set in reactions.json, but this also covers the
+        # fallback for a definition that doesn't set it:
+        self.assertEqual(reference_reagent_for(definition), "HBr")
 
-    def test_batch_reagents_default_matches_existing_recipes(self):
-        # Both seed recipes already sum to 2.0 (the default flask capacity),
-        # so at the default capacity, batch sizing should be a no-op.
-        for definition in self.engine.reaction_db.values():
-            batch = batch_reagents_for_flask(definition)
-            for name, amount in definition.reactants.items():
-                self.assertAlmostEqual(batch[name], amount, places=6)
+        from reaction_engine import ReactionDefinition
+        unset = ReactionDefinition(reactants={"foo": 2.0, "bar": 1.0}, products={"baz": 1.0})
+        self.assertEqual(reference_reagent_for(unset), "foo")
+
+    def test_reagents_for_scale_preserves_ratio(self):
+        definition = self.engine.reaction_db["HBr + ethanol → ethyl bromide"]
+        reagents = reagents_for_scale(definition, reference_moles=4.0)
+        self.assertAlmostEqual(reagents["HBr"], 4.0, places=6)
+        self.assertAlmostEqual(reagents["ethanol"], 4.0, places=6)  # 1:1 ratio
+
+    def test_reagents_for_scale_with_uneven_ratio(self):
+        from reaction_engine import ReactionDefinition
+        definition = ReactionDefinition(
+            reactants={"foo": 2.0, "bar": 1.0}, products={"baz": 1.0}, reference_reagent="bar",
+        )
+        reagents = reagents_for_scale(definition, reference_moles=3.0)
+        self.assertAlmostEqual(reagents["bar"], 3.0, places=6)
+        self.assertAlmostEqual(reagents["foo"], 6.0, places=6)  # 2:1 ratio to bar
+
+    def test_reaction_volume_ml_sums_supplier_volumes(self):
+        inventory = self.make_inventory(HBr=5.0, ethanol=5.0)
+        # Identity-molarity catalog (1 mol/mL), so 1 mol HBr + 1 mol ethanol == 2 mL
+        volume = reaction_volume_ml({"HBr": 1.0, "ethanol": 1.0}, inventory)
+        self.assertAlmostEqual(volume, 2.0, places=6)
+
+    def test_reaction_volume_ml_none_without_a_supplier(self):
+        inventory = self.make_inventory(HBr=5.0)  # no ethanol at all
+        volume = reaction_volume_ml({"HBr": 1.0, "ethanol": 1.0}, inventory)
+        self.assertIsNone(volume)
+
+    def test_reaction_scale_bounds_scale_with_flask_capacity(self):
+        definition = self.engine.reaction_db["HBr + ethanol → ethyl bromide"]
+        inventory = self.make_inventory(HBr=100.0, ethanol=100.0)
+        bounds = reaction_scale_bounds(definition, inventory, flask_capacity_ml=10.0)
+        self.assertIsNotNone(bounds)
+        recommended_min, max_moles = bounds
+        # 1 mol HBr + 1 mol ethanol (1:1 ratio, identity molarity) == 2 mL
+        # per mole of reference reagent (HBr), so for a 10 mL flask:
+        self.assertAlmostEqual(max_moles, 10.0 * 0.8 / 2.0, places=6)
+        self.assertAlmostEqual(recommended_min, 10.0 * 0.2 / 2.0, places=6)
+
+    def test_reaction_scale_bounds_none_without_a_supplier(self):
+        definition = self.engine.reaction_db["HBr + ethanol → ethyl bromide"]
+        inventory = self.make_inventory()  # empty
+        self.assertIsNone(reaction_scale_bounds(definition, inventory, flask_capacity_ml=250.0))
 
     # --- Multiple equipment of the same type ---
     def test_two_reactions_run_concurrently_with_duplicate_equipment(self):

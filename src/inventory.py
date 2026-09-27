@@ -298,12 +298,17 @@ class EquipmentInventory:
         return results
 
     def reserve_set(self, required_types: list[str],
-                     min_flask_capacity: float | None = None) -> list[str] | None:
+                     min_flask_capacity: float | None = None,
+                     preferred_flask_id: str | None = None) -> list[str] | None:
         """
         Attempt to reserve one free item per required type, all at once.
 
         For the "rb_flask" role, only flasks with capacity >= min_flask_capacity
-        are considered, and the smallest one that fits is chosen (best fit).
+        are considered, and the smallest one that fits is chosen (best fit) --
+        unless preferred_flask_id names a specific flask (e.g. one the
+        player picked at the bench), in which case that exact flask is
+        reserved instead, or the whole reservation fails if it's busy, too
+        small, or doesn't exist.
 
         Returns the list of reserved item ids on success, or None if any
         required role couldn't be satisfied (in which case nothing is reserved).
@@ -313,15 +318,25 @@ class EquipmentInventory:
 
         for type_ in required_types:
             min_cap = min_flask_capacity if type_ == "rb_flask" else None
-            candidates = [
-                item for item in self.available_items(type_, min_capacity=min_cap)
-                if item.id not in chosen_ids
-            ]
+
+            if type_ == "rb_flask" and preferred_flask_id is not None:
+                item = self.items.get(preferred_flask_id)
+                is_valid = (
+                    item is not None and item.type == "rb_flask" and not item.in_use
+                    and item.id not in chosen_ids
+                    and (min_cap is None or (item.capacity is not None and item.capacity >= min_cap))
+                )
+                candidates = [item] if is_valid else []
+            else:
+                candidates = [
+                    item for item in self.available_items(type_, min_capacity=min_cap)
+                    if item.id not in chosen_ids
+                ]
+                if type_ == "rb_flask" and min_cap is not None:
+                    candidates.sort(key=lambda item: item.capacity)
+
             if not candidates:
                 return None  # all-or-nothing: bail without reserving anything
-
-            if type_ == "rb_flask" and min_cap is not None:
-                candidates.sort(key=lambda item: item.capacity)
 
             pick = candidates[0]
             chosen.append(pick)

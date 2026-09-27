@@ -7,7 +7,8 @@
     "temperature": 20.0,
     "time_hours": 4.0,
     "efficiency": 1.0,
-    "equipment": ["rb_flask", "condenser", "tubing", "heating_mantle", "stir_bar", "magnetic_stirrer"]
+    "equipment": ["rb_flask", "condenser", "tubing", "heating_mantle", "stir_bar", "magnetic_stirrer"],
+    "reference_reagent": "HBr"
   },
   "sodium cyanide + ethyl bromide → ethyl cyanide": {
     "reactants": {"sodium cyanide": 1.0, "ethyl bromide": 1.0},
@@ -17,6 +18,7 @@
     "temperature": 40.0,
     "time_hours": 4.0,
     "efficiency": 1.0,
-    "equipment": ["rb_flask", "condenser", "tubing", "heating_mantle", "stir_bar", "magnetic_stirrer"]
+    "equipment": ["rb_flask", "condenser", "tubing", "heating_mantle", "stir_bar", "magnetic_stirrer"],
+    "reference_reagent": "ethyl bromide"
   }
 }

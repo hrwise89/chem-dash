@@ -10,12 +10,19 @@ from inventory import ChemicalInventory, EquipmentInventory, EquipmentUnavailabl
 # to import Inventory directly from reaction_engine.
 Inventory = ChemicalInventory
 
-# Batch sizing: for now, "a batch" of a recipe means scaling its reactant
-# ratios up (or down) so they sum to the smallest RB flask the player can
-# own (a 250 mL flask, capacity 2.0 mol in the same abstract "scale" units
-# used elsewhere). TODO: once equipment varies per player, base this on the
-# smallest flask actually in their equipment_inventory instead of a constant.
-DEFAULT_BATCH_FLASK_CAPACITY = 2.0
+# A vessel is never filled past this fraction of its capacity (a hard cap --
+# it just won't physically fit past this), and filling it below this
+# fraction is allowed but triggers UNDERFILL_YIELD_PENALTY (a suggestion,
+# not a block -- see start_reaction).
+MAX_FILL_FRACTION = 0.8
+RECOMMENDED_MIN_FILL_FRACTION = 0.2
+UNDERFILL_YIELD_PENALTY = 0.5
+
+# Default granularity (mol of the reference reagent) for the amount-picker
+# slider. A recipe can override this via ReactionDefinition.scale_step --
+# e.g. a future micro-scale recipe where 0.1 mol would already be a huge
+# batch could set scale_step to something like 0.001 (1 mmol).
+DEFAULT_SCALE_STEP = 0.1
 
 
 # ===============================================================
@@ -42,6 +49,11 @@ class ReactionDefinition:
     efficiency: float = 1.0                        # yield factor (0-1)
     equipment: list[str] = field(default_factory=list)  # required equipment roles,
                                                           # e.g. ["rb_flask", "condenser"]
+    reference_reagent: str | None = None       # which reactant "1 mole of reference
+                                                # reagent" scales against, for the
+                                                # amount-picker; defaults to the first
+                                                # key in `reactants` if unset
+    scale_step: float = DEFAULT_SCALE_STEP     # mol granularity for the amount slider
 
 
 @dataclass
@@ -68,21 +80,83 @@ class ReactionProcess:
         return max(0.0, self.end_time - game_clock.now())
 
 
-def batch_reagents_for_flask(
+def reference_reagent_for(definition: ReactionDefinition) -> str:
+    """Which reactant "1 mole of reference reagent" is scaled against --
+    definition.reference_reagent if set, else whichever reactant is listed
+    first (fine for the 1:1 recipes so far; worth setting explicitly once a
+    recipe's ratios aren't all equal)."""
+    return definition.reference_reagent or next(iter(definition.reactants))
+
+
+def reagents_for_scale(definition: ReactionDefinition, reference_moles: float) -> dict[str, float]:
+    """
+    Scale a reaction's base reactant ratios so the reference reagent (see
+    reference_reagent_for) totals `reference_moles`, preserving the
+    recipe's ratios for everything else. This is the single knob the
+    amount picker turns -- "moles of limiting reagent" -- expanded into the
+    full reagents dict start_reaction() needs.
+    """
+    ref = reference_reagent_for(definition)
+    ref_coeff = definition.reactants[ref]
+    if ref_coeff <= 0:
+        raise ValueError(f"Reference reagent '{ref}' has a non-positive stoichiometric coefficient")
+    scale = reference_moles / ref_coeff
+    return {name: coeff * scale for name, coeff in definition.reactants.items()}
+
+
+def reaction_volume_ml(reagents: dict[str, float], inventory: ChemicalInventory) -> float | None:
+    """
+    Total real-world volume (mL) the given reagent amounts would occupy in
+    a vessel, based on whatever currently supplies each one (a direct
+    stock, or a solution -- see ChemicalInventory.resolve_supplier). Solid
+    reagents (tracked by mass, not volume -- e.g. sodium cyanide) don't
+    contribute; that's a real simplification, but treating them as
+    occupying ~0 mL is a reasonable one for a solid dissolved into a
+    liquid-dominated reaction volume.
+
+    Returns None if any reagent currently has no supplier at all, since
+    there's nothing to size against -- callers that already validated
+    inventory.has_moles() for each reagent won't normally see this.
+    """
+    total_ml = 0.0
+    for name, moles in reagents.items():
+        supplier = inventory.resolve_supplier(name)
+        if supplier is None:
+            return None
+        species = inventory.species_for(supplier)
+        if species.state == "solid":
+            continue
+        total_ml += moles / species.moles_per_unit()
+    return total_ml
+
+
+def reaction_scale_bounds(
     definition: ReactionDefinition,
-    flask_capacity: float = DEFAULT_BATCH_FLASK_CAPACITY,
-) -> dict[str, float]:
+    inventory: ChemicalInventory,
+    flask_capacity_ml: float,
+) -> tuple[float, float] | None:
     """
-    Scale a reaction's base reactant ratios up (or down) so their total
-    equals `flask_capacity` -- i.e. "a full batch" in whatever's the
-    smallest flask available. Used both to show the player how much of
-    each reagent a batch needs, and to actually run that batch size.
+    (recommended_min_moles, max_moles) of the reference reagent for running
+    this reaction in a vessel of flask_capacity_ml:
+      - max_moles fills MAX_FILL_FRACTION of the vessel -- a hard cap, since
+        past this the reaction mixture just doesn't fit.
+      - recommended_min_moles fills RECOMMENDED_MIN_FILL_FRACTION -- a
+        suggestion, not enforced (a smaller amount is allowed; see
+        start_reaction's underfill yield penalty).
+
+    Both scale with how concentrated whatever's currently supplying each
+    reagent is -- a stronger acid solution needs less volume per mole, so
+    it raises how much you can make in the same flask. Returns None if the
+    per-mole volume can't be determined (see reaction_volume_ml).
     """
-    base_total = sum(definition.reactants.values())
-    if base_total <= 0:
-        return dict(definition.reactants)
-    scale = flask_capacity / base_total
-    return {name: amount * scale for name, amount in definition.reactants.items()}
+    unit_reagents = reagents_for_scale(definition, 1.0)
+    ml_per_reference_mole = reaction_volume_ml(unit_reagents, inventory)
+    if not ml_per_reference_mole:
+        return None
+    return (
+        flask_capacity_ml * RECOMMENDED_MIN_FILL_FRACTION / ml_per_reference_mole,
+        flask_capacity_ml * MAX_FILL_FRACTION / ml_per_reference_mole,
+    )
 
 
 # ===============================================================
@@ -139,6 +213,7 @@ class ReactionEngine:
         temperature: float,
         time_hours: float,
         game_clock: GameClock,
+        preferred_flask_id: str | None = None,
     ) -> ReactionProcess | dict[str, float]:
         """
         Attempt to start a reaction.
@@ -152,6 +227,11 @@ class ReactionEngine:
         reagents are consumed from inventory, and a ReactionProcess is
         returned that will be ready to collect once the game clock reaches
         its end_time.
+
+        preferred_flask_id reserves that specific rb_flask (e.g. one the
+        player picked at the bench) instead of auto-picking the smallest
+        sufficient one; the reaction is rejected if it doesn't fit or isn't
+        free. Left as None, the old best-fit behavior applies.
         """
         # Check inventory has enough of each reagent (resolved through
         # whatever actually supplies it -- a direct stock, or a solution
@@ -170,23 +250,23 @@ class ReactionEngine:
         reaction_name, definition = match
         logger.debug("start_reaction: matched '%s' for reagents %s", reaction_name, reagents)
 
-        # --- Reaction scale must fit in the reserved flask ---
-        scale = sum(reagents.values())
+        # --- Reaction volume must fit in the reserved flask ---
+        required_ml = reaction_volume_ml(reagents, inventory) or 0.0
 
         # --- Reserve equipment (all-or-nothing) ---
         equipment_ids = equipment_inventory.reserve_set(
-            definition.equipment, min_flask_capacity=scale
+            definition.equipment, min_flask_capacity=required_ml, preferred_flask_id=preferred_flask_id,
         )
         if equipment_ids is None:
             missing = equipment_inventory.missing_types(
-                definition.equipment, min_flask_capacity=scale
+                definition.equipment, min_flask_capacity=required_ml
             )
             missing_desc = ", ".join(missing) if missing else "equipment"
-            logger.warning("start_reaction rejected: missing/busy equipment %s for '%s' (scale %.2f mol)",
-                            missing, reaction_name, scale)
+            logger.warning("start_reaction rejected: missing/busy equipment %s for '%s' (needs %.1f mL)",
+                            missing, reaction_name, required_ml)
             raise EquipmentUnavailableError(
                 f"Missing or busy: {missing_desc} "
-                f"(need a flask holding at least {scale:.2f} mol for '{reaction_name}')"
+                f"(need a flask holding at least {required_ml:.1f} mL for '{reaction_name}')"
             )
         logger.debug("start_reaction: reserved equipment %s for '%s'", equipment_ids, reaction_name)
 
@@ -204,6 +284,21 @@ class ReactionEngine:
             condition_score *= 0.5
         elif time_ratio < 0.8 or time_ratio > 1.2:
             condition_score *= 0.8
+
+        # Filling the flask below RECOMMENDED_MIN_FILL_FRACTION is allowed
+        # (no hard minimum -- see reaction_scale_bounds) but isn't how
+        # you'd really run it, so it costs yield same as any other
+        # off-spec condition above.
+        flask_item = next(
+            (equipment_inventory.items[i] for i in equipment_ids
+             if equipment_inventory.items[i].type == "rb_flask"),
+            None,
+        )
+        if flask_item is not None and flask_item.capacity:
+            if required_ml < flask_item.capacity * RECOMMENDED_MIN_FILL_FRACTION:
+                condition_score *= UNDERFILL_YIELD_PENALTY
+                logger.debug("start_reaction: '%s' underfilled (%.1f mL in a %.1f mL flask) -- yield penalty applied",
+                             reaction_name, required_ml, flask_item.capacity)
 
         limiting_ratio = min(
             reagents[r] / req for r, req in definition.reactants.items()

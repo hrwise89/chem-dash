@@ -5,9 +5,9 @@
     "sodium cyanide": 100.0
   },
   "equipment": [
-    {"type": "rb_flask", "name": "250 mL RB Flask", "capacity": 2.0},
-    {"type": "rb_flask", "name": "250 mL RB Flask", "capacity": 2.0},
-    {"type": "rb_flask", "name": "250 mL RB Flask", "capacity": 2.0},
+    {"type": "rb_flask", "name": "125 mL RB Flask", "capacity": 125.0},
+    {"type": "rb_flask", "name": "250 mL RB Flask", "capacity": 250.0},
+    {"type": "rb_flask", "name": "500 mL RB Flask", "capacity": 500.0},
     {"type": "condenser", "name": "Reflux Condenser"},
     {"type": "condenser", "name": "Reflux Condenser"},
     {"type": "condenser", "name": "Reflux Condenser"},
