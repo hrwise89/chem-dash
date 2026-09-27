@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from devtools import logger
 from game_clock import GameClock
 from inventory import ChemicalInventory, EquipmentInventory, EquipmentUnavailableError
+from skills import SYNTHESIS, synthesis_yield_bonus
 
 # Re-exported for convenience / backwards compatibility with code that used
 # to import Inventory directly from reaction_engine.
@@ -249,6 +250,7 @@ class ReactionEngine:
         time_hours: float,
         game_clock: GameClock,
         preferred_flask_id: str | None = None,
+        skills=None,
     ) -> ReactionProcess | dict[str, float]:
         """
         Attempt to start a reaction.
@@ -267,6 +269,10 @@ class ReactionEngine:
         player picked at the bench) instead of auto-picking the smallest
         sufficient one; the reaction is rejected if it doesn't fit or isn't
         free. Left as None, the old best-fit behavior applies.
+
+        skills (a skills.PlayerSkills, optional) nudges condition_score up
+        per skills.synthesis_yield_bonus() -- see skills.py. Left as None,
+        this behaves exactly as if the player had no skills at all.
         """
         # Check inventory has enough of each reagent (resolved through
         # whatever actually supplies it -- a direct stock, or a solution
@@ -334,6 +340,9 @@ class ReactionEngine:
                 condition_score *= UNDERFILL_YIELD_PENALTY
                 logger.debug("start_reaction: '%s' underfilled (%.1f mL in a %.1f mL flask) -- yield penalty applied",
                              reaction_name, required_ml, flask_item.capacity)
+
+        if skills is not None:
+            condition_score = min(1.0, condition_score + synthesis_yield_bonus(skills.level_of(SYNTHESIS)))
 
         limiting_ratio = min(
             reagents[r] / req for r, req in definition.reactants.items()

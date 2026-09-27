@@ -34,6 +34,7 @@ from inventory import (  # noqa: F401 -- re-exported
     is_crude,
     pure_name_for,
 )
+from skills import PURIFICATION, purification_speed_multiplier
 
 SILICA_NAME = "Silica Gel"
 TECHNICAL_SOLVENT_NAME = "Bulk Solvent (Technical Grade, 95%)"
@@ -79,6 +80,9 @@ class PurifyMethodSpec:
     solvent_name: str | None = None
     solvent_base_ml: float = 0.0
     solvent_per_unit_ml: float = 0.0
+    # (skill_name, min_level) required to use this method, or None for no
+    # requirement -- see skills.py. Nothing sets this yet.
+    required_skill: tuple[str, int] | None = None
 
     def cost(self, mass_g: float) -> tuple[float, float]:
         """(silica_g, solvent_ml) needed to purify mass_g grams."""
@@ -119,6 +123,10 @@ class PurifyScaleSpec:
     display_divisor: float = 1.0                  # multiply grams by this for the UI's number (1000 -> mg)
     display_unit: str = "g"
     methods: dict[str, PurifyMethodSpec] = field(default_factory=dict)
+    # (skill_name, min_level) required to use this scale at all, or None
+    # for no requirement -- see skills.py. Nothing sets this yet; Pilot/
+    # Production are still gated purely through DISABLED_SCALES.
+    required_skill: tuple[str, int] | None = None
 
     def format_amount(self, mass_g: float) -> str:
         displayed = mass_g * self.display_divisor
@@ -196,20 +204,33 @@ PURIFY_SCALE_ORDER = ["micro", "bench", "pilot", "production"]
 PURIFY_METHOD_ORDER = [COLUMN_CHROMATOGRAPHY, DISTILLATION]
 
 
-def scale_is_available(scale_key: str, equipment_inventory) -> bool:
+def scale_is_available(scale_key: str, equipment_inventory, skills=None) -> bool:
     if scale_key in DISABLED_SCALES:
         return False
     spec = PURIFY_SCALES[scale_key]
+    if skills is not None and not skills.meets(spec.required_skill):
+        return False
     return any(equipment_inventory.available_items(t) for t in spec.equipment_types)
 
 
-def method_is_available(scale_key: str, method_key: str, equipment_inventory) -> bool:
-    if not scale_is_available(scale_key, equipment_inventory):
+def method_is_available(scale_key: str, method_key: str, equipment_inventory, skills=None) -> bool:
+    if not scale_is_available(scale_key, equipment_inventory, skills):
         return False
     method = PURIFY_SCALES[scale_key].methods.get(method_key)
     if method is None:
         return False
+    if skills is not None and not skills.meets(method.required_skill):
+        return False
     return bool(equipment_inventory.available_items(method.equipment_type))
+
+
+def effective_time_hours(method: PurifyMethodSpec, skills=None) -> float:
+    """method.time_hours, sped up by skills.purification_speed_multiplier()
+    when skills is given -- the single place both purify() and the bench
+    UI's time preview compute this, so they can never drift apart."""
+    if skills is None:
+        return method.time_hours
+    return method.time_hours * purification_speed_multiplier(skills.level_of(PURIFICATION))
 
 
 def available_slider_values(scale_key: str, available_mass_g: float) -> list[float]:
@@ -247,6 +268,7 @@ def purify(
     crude_name: str,
     mass_g: float,
     rng: random.Random | None = None,
+    skills=None,
 ) -> tuple[str, float, float]:
     """
     Purify `mass_g` grams (mass, not native units -- see mass_grams()/
@@ -254,6 +276,12 @@ def purify(
     `scale_key`, at a random yield within the method's range. Consumes the
     crude chemical, silica (if the method uses any), and solvent, then
     advances the game clock by the method's fixed time -- all at once.
+
+    `skills` (a skills.PlayerSkills, optional) gates scale/method access
+    per their required_skill, and speeds up the method's base time_hours
+    per skills.purification_speed_multiplier() -- see skills.py. Left as
+    None, this behaves exactly as if the player had no skills at all (no
+    gating beyond equipment, no speed bonus).
 
     Returns (pure_name, purified_mass_g, yield_fraction). Raises
     NotCrudeError if crude_name isn't crude, and ValueError (leaving
@@ -263,9 +291,9 @@ def purify(
     pure_name = pure_name_for(crude_name)  # raises NotCrudeError if not crude
 
     scale = PURIFY_SCALES[scale_key]
-    if not scale_is_available(scale_key, equipment_inventory):
+    if not scale_is_available(scale_key, equipment_inventory, skills):
         raise ValueError(f"{scale.label} scale isn't available.")
-    if not method_is_available(scale_key, method_key, equipment_inventory):
+    if not method_is_available(scale_key, method_key, equipment_inventory, skills):
         method_label = scale.methods[method_key].label if method_key in scale.methods else method_key
         raise ValueError(f"{method_label} isn't available at {scale.label} scale.")
 
@@ -304,6 +332,8 @@ def purify(
     yield_fraction = rng.uniform(method.min_yield, method.max_yield)
     purified_mass_g = mass_g * yield_fraction
 
+    time_hours = effective_time_hours(method, skills)
+
     if silica_g > 0:
         consumables.remove(SILICA_NAME, silica_g)
     if solvent_ml > 0:
@@ -311,12 +341,12 @@ def purify(
     inventory.remove(crude_name, native_amount)
     purified_native = native_amount_for_mass(inventory, pure_name, purified_mass_g)
     inventory.add(pure_name, purified_native)
-    game_clock.advance(method.time_hours)
+    game_clock.advance(time_hours)
 
     logger.info(
         "Purified %.3fg %s -> %.3fg %s via %s (%s scale, %.1f%% yield), +%.2fh, "
         "using %.1fg silica + %.1fmL %s",
         mass_g, crude_name, purified_mass_g, pure_name, method.label, scale.label,
-        yield_fraction * 100, method.time_hours, silica_g, solvent_ml, method.solvent_name,
+        yield_fraction * 100, time_hours, silica_g, solvent_ml, method.solvent_name,
     )
     return pure_name, purified_mass_g, yield_fraction

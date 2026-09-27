@@ -18,6 +18,7 @@ from purification import (
     PURIFY_SCALES,
     SILICA_NAME,
     available_slider_values,
+    effective_time_hours,
     is_crude,
     mass_grams,
     method_is_available,
@@ -51,7 +52,7 @@ class PurifyBenchView(BenchView):
         options = []
         for key in PURIFY_SCALE_ORDER:
             spec = PURIFY_SCALES[key]
-            enabled = scale_is_available(key, equipment)
+            enabled = scale_is_available(key, equipment, self.window.player_skills)
             label = spec.range_label() if enabled else f"{spec.range_label()} (not available)"
             options.append((label, enabled))
         options.append(("Supplies", True))
@@ -95,7 +96,7 @@ class PurifyBenchView(BenchView):
         equipment = self.window.equipment_inventory
         options = []
         for method_key in PURIFY_METHOD_ORDER:
-            if not method_is_available(self.scale_key, method_key, equipment):
+            if not method_is_available(self.scale_key, method_key, equipment, self.window.player_skills):
                 continue
             method = PURIFY_SCALES[self.scale_key].methods[method_key]
             options.append((method.label, method_key))
@@ -242,8 +243,9 @@ class PurifyBenchView(BenchView):
         summary = ", ".join(line for line in cost_lines if line) or "Cost: none"
         self.text_pool.get("cost_summary", summary, center_x, bar_y - 34, arcade.color.DARK_BLUE,
                             font_size=13, anchor_x="center").draw()
+        time_hours = effective_time_hours(method, self.window.player_skills)
         self.text_pool.get("time_yield",
-            f"Time: {method.time_hours * 60:.0f} min   Yield: {method.min_yield * 100:.0f}"
+            f"Time: {time_hours * 60:.0f} min   Yield: {method.min_yield * 100:.0f}"
             f"-{method.max_yield * 100:.0f}%",
             center_x, bar_y - 54, arcade.color.DARK_BLUE, font_size=13, anchor_x="center").draw()
 
@@ -264,11 +266,12 @@ class PurifyBenchView(BenchView):
         mass_g = self.available_values[self.amount_index]
         scale = PURIFY_SCALES[self.scale_key]
         method = scale.methods[self.method_key]
+        skills = self.window.player_skills
         try:
             pure_name, purified_mass_g, yield_fraction = purify(
                 self.scale_key, self.method_key, self.window.chemical_inventory,
                 self.window.equipment_inventory, self.window.consumables, self.window.game_clock,
-                self.pending_crude_name, mass_g,
+                self.pending_crude_name, mass_g, skills=skills,
             )
         except ValueError as e:
             self.show_message(str(e), arcade.color.RED)
@@ -280,9 +283,10 @@ class PurifyBenchView(BenchView):
         self.mode = "menu"
         self.reset_cursor()
         purified_display = purified_mass_g * scale.display_divisor
+        time_hours = effective_time_hours(method, skills)
         self.show_message(
             f"Purified {purified_display:.2f} {scale.display_unit} {pure_name} "
-            f"({yield_fraction * 100:.0f}% yield, -{method.time_hours * 60:.0f} min)",
+            f"({yield_fraction * 100:.0f}% yield, -{time_hours * 60:.0f} min)",
             arcade.color.DARK_GREEN,
         )
 

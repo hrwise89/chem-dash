@@ -19,6 +19,7 @@ from day_manager import DayManager  # noqa: E402
 from economy import ContractBoard, Wallet, load_contract_offers  # noqa: E402
 from devtools import install_crash_logging  # noqa: E402
 from message_log import MessageLog  # noqa: E402
+from skills import PlayerSkills  # noqa: E402
 
 STARTING_BALANCE = 200.0
 
@@ -51,6 +52,10 @@ def main():
 	# benches that auto-list their own equipment/supplies.
 	window.equipment_catalog = load_equipment_catalog("src/data/equipment.json")
 	window.consumable_catalog = load_consumable_catalog("src/data/consumables.json")
+
+	# Player skills/specialities (see skills.py) -- no way to raise a level
+	# yet, so this starts everyone at level 0 in everything (a no-op).
+	window.player_skills = PlayerSkills()
 
 	window.timer_manager = TimerManager()  # attach it to the window
 

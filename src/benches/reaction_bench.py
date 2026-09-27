@@ -596,6 +596,7 @@ class ReactionBenchView(BenchView):
                 time_hours=definition.time_hours,
                 game_clock=self.window.game_clock,
                 preferred_flask_id=self.pending_vessel.id,
+                skills=self.window.player_skills,
             )
             self.mode = "notebook_active"
             self.reset_cursor()

@@ -23,6 +23,7 @@ from reaction_engine import (
     reagents_for_scale,
     reference_reagent_for,
 )
+from skills import SYNTHESIS, PlayerSkills
 
 FULL_RIG = ["rb_flask"]
 
@@ -517,6 +518,56 @@ class TestReactionEngine(unittest.TestCase):
         self.run_to_completion(inventory, equipment, {"HBr": 1.0, "ethanol": 1.0}, "neat", 20.0, 4.0)
         self.run_to_completion(inventory, equipment, {"HBr": 1.0, "ethanol": 1.0}, "neat", 20.0, 4.0)
         self.assertEqual(len(self.engine.history), 2)
+
+
+class TestReactionEngineSkills(unittest.TestCase):
+    """skills=None (the default) must behave exactly like before it
+    existed; a synthesis skill only nudges condition_score up, and only
+    enough to partially offset an off-spec condition, never past 1.0."""
+
+    def setUp(self):
+        self.engine = ReactionEngine("src/data/reactions.json")
+        self.clock = GameClock()
+
+    def make_inventory(self, **kwargs):
+        inv = ChemicalInventory(species_catalog=TEST_SPECIES_CATALOG)
+        for chem, amt in kwargs.items():
+            inv.add(chem, amt)
+        return inv
+
+    def start_with_wrong_solvent(self, skills=None):
+        inventory = self.make_inventory(HBr=1.0, ethanol=1.0)
+        equipment = EquipmentInventory()
+        make_full_rig(equipment)
+        # Wrong solvent halves condition_score to 0.5 -- a clean baseline
+        # to see a skill bonus land on top of.
+        return self.engine.start_reaction(
+            inventory, equipment, {"HBr": 1.0, "ethanol": 1.0}, "toluene", 20.0, 4.0, self.clock, skills=skills,
+        )
+
+    def test_no_skills_argument_leaves_condition_score_unchanged(self):
+        process = self.start_with_wrong_solvent()
+        self.assertAlmostEqual(process.condition_score, 0.5, places=6)
+
+    def test_untrained_skills_object_also_leaves_condition_score_unchanged(self):
+        process = self.start_with_wrong_solvent(skills=PlayerSkills())
+        self.assertAlmostEqual(process.condition_score, 0.5, places=6)
+
+    def test_trained_synthesis_skill_raises_condition_score(self):
+        process = self.start_with_wrong_solvent(skills=PlayerSkills(levels={SYNTHESIS: 5}))
+        self.assertAlmostEqual(process.condition_score, 0.55, places=6)  # 0.5 + 5%
+
+    def test_synthesis_skill_bonus_never_pushes_condition_score_past_one(self):
+        inventory = self.make_inventory(HBr=1.0, ethanol=1.0)
+        equipment = EquipmentInventory()
+        make_full_rig(equipment)
+        # Ideal conditions already give condition_score=1.0 -- a maxed-out
+        # skill bonus must not push it above that.
+        process = self.engine.start_reaction(
+            inventory, equipment, {"HBr": 1.0, "ethanol": 1.0}, "neat", 20.0, 4.0, self.clock,
+            skills=PlayerSkills(levels={SYNTHESIS: 100}),
+        )
+        self.assertAlmostEqual(process.condition_score, 1.0, places=6)
 
 
 if __name__ == "__main__":

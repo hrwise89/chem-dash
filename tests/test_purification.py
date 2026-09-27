@@ -24,6 +24,7 @@ from purification import (  # noqa: E402
     TECHNICAL_SOLVENT_NAME,
     NotCrudeError,
     available_slider_values,
+    effective_time_hours,
     is_crude,
     mass_grams,
     method_is_available,
@@ -32,6 +33,7 @@ from purification import (  # noqa: E402
     purify,
     scale_is_available,
 )
+from skills import PURIFICATION, PlayerSkills
 
 SPECIES_CATALOG = {
     "ethyl bromide": ChemicalSpecies(name="ethyl bromide", state="liquid", molarity=1000.0, density=2.0),
@@ -167,6 +169,20 @@ class TestScaleAndMethodAvailability(unittest.TestCase):
         item.in_use = True
         self.assertFalse(scale_is_available("bench", self.equipment))
 
+    def test_skills_none_behaves_exactly_like_no_skills_argument(self):
+        self.equipment.add_item("chroma_column_micro", "Chromatography Column (Micro)")
+        self.assertEqual(
+            scale_is_available("micro", self.equipment),
+            scale_is_available("micro", self.equipment, skills=None),
+        )
+
+    def test_a_scale_with_no_required_skill_ignores_an_untrained_player(self):
+        # Nothing sets required_skill yet, so an empty PlayerSkills (all
+        # levels 0) must never gate anything that equipment alone allows.
+        self.equipment.add_item("chroma_column_micro", "Chromatography Column (Micro)")
+        self.assertTrue(scale_is_available("micro", self.equipment, PlayerSkills()))
+        self.assertTrue(method_is_available("micro", COLUMN_CHROMATOGRAPHY, self.equipment, PlayerSkills()))
+
 
 class TestPurify(unittest.TestCase):
 
@@ -246,6 +262,24 @@ class TestPurify(unittest.TestCase):
     def test_bench_distillation_uses_no_silica(self):
         self.run_purify("bench", DISTILLATION, 1.0)
         self.assertAlmostEqual(self.consumables.contents[SILICA_NAME], 1000.0, places=6)
+
+    # --- Skills speed up a method without a skills argument changing anything ---
+
+    def test_no_skills_argument_advances_the_clock_by_the_base_time(self):
+        self.run_purify("bench", COLUMN_CHROMATOGRAPHY, 1.0)
+        self.assertAlmostEqual(self.clock.now(), 1.0, places=6)
+
+    def test_skilled_purification_advances_the_clock_less(self):
+        skills = PlayerSkills(levels={PURIFICATION: 10})  # 20% faster
+        self.run_purify("bench", COLUMN_CHROMATOGRAPHY, 1.0, skills=skills)
+        self.assertAlmostEqual(self.clock.now(), 0.8, places=6)
+
+    def test_effective_time_hours_matches_what_purify_actually_advances_by(self):
+        method = BENCH_SCALE.methods[COLUMN_CHROMATOGRAPHY]
+        skills = PlayerSkills(levels={PURIFICATION: 10})
+        expected = effective_time_hours(method, skills)
+        self.run_purify("bench", COLUMN_CHROMATOGRAPHY, 1.0, skills=skills)
+        self.assertAlmostEqual(self.clock.now(), expected, places=6)
 
     # --- Mass <-> native conversion round-trips through the crude stock ---
 
