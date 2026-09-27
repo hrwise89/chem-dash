@@ -1,0 +1,12 @@
+{
+  "Polymer lab needs ethyl bromide": {
+    "product": "ethyl bromide (crude)",
+    "amount": 0.5,
+    "reward": 40.0
+  },
+  "Grad student needs ethyl cyanide sample": {
+    "product": "ethyl cyanide (crude)",
+    "amount": 0.3,
+    "reward": 35.0
+  }
+}

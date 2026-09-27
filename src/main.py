@@ -16,6 +16,9 @@ from inventory import load_starting_inventories  # noqa: E402
 from reaction_engine import ReactionEngine  # noqa: E402
 from game_clock import GameClock  # noqa: E402
 from day_manager import DayManager  # noqa: E402
+from economy import ContractBoard, Wallet, load_contract_offers  # noqa: E402
+
+STARTING_BALANCE = 200.0
 
 
 def main():
@@ -24,6 +27,11 @@ def main():
 	# Game clock
 	window.game_clock = GameClock()
 	window.day_manager = DayManager()
+
+	# Money + contracts ("orders")
+	window.wallet = Wallet(STARTING_BALANCE)
+	window.contract_board = ContractBoard()
+	load_contract_offers(window.contract_board, "src/data/contracts.json")
 
 	# Reaction engine
 	window.reaction_engine = ReactionEngine("src/data/reactions.json")

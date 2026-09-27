@@ -93,6 +93,10 @@ class ChemicalSpecies:
     molarity: float | None = None           # mol/L -- required for "liquid"/"solution"
     solute: str | None = None               # required for "solution"
     solvent: str | None = None              # informational, "solution" only
+    price_per_unit: float | None = None     # $ per native unit (g or mL), for the
+                                             # computer bench's catalogue; None means
+                                             # it isn't sold there (e.g. a product
+                                             # the player makes rather than buys)
 
     def __post_init__(self):
         if self.state == "solid" and not self.molecular_weight:

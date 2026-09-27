@@ -3,16 +3,19 @@
     "state": "solution",
     "solute": "HBr",
     "solvent": "water",
-    "molarity": 8.8
+    "molarity": 8.8,
+    "price_per_unit": 0.12
   },
   "ethanol": {
     "state": "liquid",
     "molecular_weight": 46.07,
-    "molarity": 17.13
+    "molarity": 17.13,
+    "price_per_unit": 0.03
   },
   "sodium cyanide": {
     "state": "solid",
-    "molecular_weight": 49.01
+    "molecular_weight": 49.01,
+    "price_per_unit": 0.25
   },
   "ethyl bromide": {
     "state": "liquid",

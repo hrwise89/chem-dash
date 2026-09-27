@@ -2,6 +2,7 @@ import arcade
 import math
 from settings import (SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE, SPRITE_SCALING, TILE_SIZE,
 	GRID_WIDTH, GRID_HEIGHT, PLAYER_COLOR, MAP_BACKGROUND_COLOR, GAME_HOURS_PER_REAL_SECOND)
+from benches.computer_bench import ComputerBenchView
 from benches.purify_bench import PurifyBenchView
 from benches.reaction_bench import ReactionBenchView
 from timer_manager import TimerManager, Timer
@@ -139,6 +140,10 @@ class LabView(arcade.View):
 				"width": TILE_SIZE * 3, "height": TILE_SIZE,
 				"color": arcade.color.DARK_GRAY, "action": "view your hood",
 				"opens": ReactionBenchView},
+			{"name": "bench_computer_1", "x": TILE_SIZE * 19.5, "y": TILE_SIZE * 16.5,
+				"width": TILE_SIZE * 3, "height": TILE_SIZE,
+				"color": arcade.color.DARK_SLATE_BLUE, "action": "use the computer",
+				"opens": ComputerBenchView},
 			# Additional benches here
 			{"name": "door_home", "x": DOOR_COL * TILE_SIZE + TILE_SIZE // 2,
 				"y": DOOR_ROW * TILE_SIZE + TILE_SIZE // 2,
