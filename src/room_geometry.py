@@ -7,6 +7,7 @@ place something in the room) don't have to import the view itself.
 import arcade
 
 from settings import ROOM_COLS, ROOM_ORIGIN_X, ROOM_ORIGIN_Y, ROOM_ROWS, TILE_SIZE
+from sprites import make_sprite
 
 # Player spawn point (row/col in the room's local grid, 0 at bottom-left),
 # picked to sit clear of every bench and the door.
@@ -50,8 +51,8 @@ def room_y(local_row: float) -> float:
     return ROOM_ORIGIN_Y + local_row * TILE_SIZE + TILE_SIZE / 2
 
 
-def wall_tile(local_row: int, local_col: int) -> arcade.SpriteSolidColor:
-    return arcade.SpriteSolidColor(TILE_SIZE, TILE_SIZE, room_x(local_col), room_y(local_row),
+def wall_tile(local_row: int, local_col: int) -> arcade.Sprite:
+    return make_sprite("wall", TILE_SIZE, TILE_SIZE, room_x(local_col), room_y(local_row),
         arcade.color.BLACK)
 
 

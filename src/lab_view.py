@@ -16,6 +16,7 @@ from room_geometry import (
 	PURIFY_COL, REACTION_COL, draw_door_marker, room_x, room_y, wall_sprites,
 )
 from save_game import save_game
+from sprites import make_sprite
 from timer_manager import TimerManager, Timer
 from devtools import logger
 
@@ -99,7 +100,7 @@ class LabView(arcade.View):
 		self.bench_list = arcade.SpriteList()
 
 		for spec in self.bench_specs:
-			bench = arcade.SpriteSolidColor(spec["width"], spec["height"],
+			bench = make_sprite(spec["name"], spec["width"], spec["height"],
 				spec["x"], spec["y"], spec["color"])
 			self.benches[spec["name"]] = bench
 			self.bench_list.append(bench)

@@ -6,12 +6,18 @@ import arcade
 
 from room_geometry import room_x, room_y
 from settings import GRID_HEIGHT, GRID_WIDTH, PLAYER_COLOR, TILE_SIZE
+from sprites import texture_for
 
 
 class Player(arcade.Sprite):
     def __init__(self, row: int, col: int, color: tuple[int, int, int] = PLAYER_COLOR):
         super().__init__()
-        self.texture = arcade.make_soft_square_texture(TILE_SIZE - 2, color, outer_alpha=255)
+        texture = texture_for("player")
+        if texture is not None:
+            self.texture = texture
+            self.width = self.height = TILE_SIZE - 2
+        else:
+            self.texture = arcade.make_soft_square_texture(TILE_SIZE - 2, color, outer_alpha=255)
         self.row = row
         self.col = col
         self.target_x = room_x(self.col)
