@@ -395,19 +395,42 @@ class TestReactionEngine(unittest.TestCase):
 
     def test_reaction_scale_bounds_scale_with_flask_capacity(self):
         definition = self.engine.reaction_db["HBr + ethanol → ethyl bromide"]
-        inventory = self.make_inventory(HBr=100.0, ethanol=100.0)
+        inventory = self.make_inventory(HBr=100.0, ethanol=100.0)  # plenty of both -- vessel is the limit
         bounds = reaction_scale_bounds(definition, inventory, flask_capacity_ml=10.0)
         self.assertIsNotNone(bounds)
-        recommended_min, max_moles = bounds
+        recommended_min, max_moles, limiting_factor = bounds
         # 1 mol HBr + 1 mol ethanol (1:1 ratio, identity molarity) == 2 mL
         # per mole of reference reagent (HBr), so for a 10 mL flask:
         self.assertAlmostEqual(max_moles, 10.0 * 0.8 / 2.0, places=6)
         self.assertAlmostEqual(recommended_min, 10.0 * 0.2 / 2.0, places=6)
+        self.assertEqual(limiting_factor, "vessel")
 
     def test_reaction_scale_bounds_none_without_a_supplier(self):
         definition = self.engine.reaction_db["HBr + ethanol → ethyl bromide"]
         inventory = self.make_inventory()  # empty
         self.assertIsNone(reaction_scale_bounds(definition, inventory, flask_capacity_ml=250.0))
+
+    def test_reaction_scale_bounds_limited_by_scarce_reagent(self):
+        # A huge vessel would allow up to 4.0 mol (20 mL * 0.8 / 2 mL per
+        # mol), but there's only 1.5 mol of ethanol on hand -- max should be
+        # capped there instead, and say so.
+        definition = self.engine.reaction_db["HBr + ethanol → ethyl bromide"]
+        inventory = self.make_inventory(HBr=100.0, ethanol=1.5)
+        recommended_min, max_moles, limiting_factor = reaction_scale_bounds(
+            definition, inventory, flask_capacity_ml=20.0
+        )
+        self.assertAlmostEqual(max_moles, 1.5, places=6)  # 1:1 ratio to HBr
+        self.assertEqual(limiting_factor, "ethanol")
+
+    def test_reaction_scale_bounds_reports_reference_reagent_as_limiting(self):
+        # Same idea, but the reference reagent itself (HBr) is the scarce one.
+        definition = self.engine.reaction_db["HBr + ethanol → ethyl bromide"]
+        inventory = self.make_inventory(HBr=0.8, ethanol=100.0)
+        recommended_min, max_moles, limiting_factor = reaction_scale_bounds(
+            definition, inventory, flask_capacity_ml=20.0
+        )
+        self.assertAlmostEqual(max_moles, 0.8, places=6)
+        self.assertEqual(limiting_factor, "HBr")
 
     # --- Multiple equipment of the same type ---
     def test_two_reactions_run_concurrently_with_duplicate_equipment(self):

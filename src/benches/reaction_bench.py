@@ -8,8 +8,8 @@ import math
 import arcade
 from devtools import logger
 from inventory import EquipmentUnavailableError
-from reaction_engine import reaction_scale_bounds, reagents_for_scale
-from benches.ui_common import BenchView
+from reaction_engine import reaction_scale_bounds, reagents_for_scale, reference_reagent_for
+from benches.ui_common import BenchView, LIST_START_Y
 
 # Placeholder category ordering for equipment rows: vessels first, then
 # everything else alphabetically by type. A real tagging system (the kind
@@ -24,7 +24,6 @@ INDICATOR_MAX_SHOWN = 8
 # ---- Amount-picker slider ----
 SLIDER_WIDTH = 500
 SLIDER_HEIGHT = 26
-SLIDER_Y_OFFSET = -10          # relative to LIST_START_Y
 SLIDER_INITIAL_REPEAT_DELAY = 0.35   # seconds before a held key starts auto-repeating
 SLIDER_MIN_REPEAT_INTERVAL = 0.04    # fastest auto-repeat once fully "held"
 SLIDER_REPEAT_ACCEL = 0.05           # how fast the repeat interval shrinks with hold time
@@ -35,9 +34,10 @@ class ReactionBenchView(BenchView):
     def __init__(self, window, lab_view):
         super().__init__(window, lab_view, title="Reaction Bench")
         # "overview" | "equipment" | "recipes" | "notebook" | "inventory"
-        # | "select_vessel" | "select_amount" | "slider" (the last three are
-        # the sub-flow for starting a reaction: pick a recipe -> pick a
-        # vessel -> pick an amount, either "Max" or a hand-adjusted slider)
+        # | "select_vessel" | "select_amount" (the last two are the sub-flow
+        # for starting a reaction: pick a recipe -> pick a vessel -> pick an
+        # amount. "select_amount" is a single screen with two rows -- "Max"
+        # and a hand-adjustable slider -- rather than separate screens.)
         self.mode = "overview"
         self.sections = ["equipment", "recipes", "notebook", "inventory"]
 
@@ -50,9 +50,9 @@ class ReactionBenchView(BenchView):
         self.pending_vessel = None
         self.pending_min_moles = 0.0
         self.pending_max_moles = 0.0
-        self.amount_menu_options = ["Max", "Slider"]
+        self.pending_max_limiting_factor = None  # "vessel" or a reagent name
 
-        # Slider-specific state:
+        # Slider-specific state (row 1 of the "select_amount" screen):
         self.slider_value = 0.0
         self.slider_hold_elapsed = 0.0
         self.slider_repeat_timer = 0.0
@@ -118,7 +118,9 @@ class ReactionBenchView(BenchView):
 
     def on_update(self, delta_time):
         super().on_update(delta_time)          # message timer
-        if self.mode == "slider":
+        # The slider only responds to a held LEFT/RIGHT while the cursor is
+        # actually sitting on its row (row 1) of the amount screen.
+        if self.mode == "select_amount" and self.cursor_index == 1:
             self._update_slider_hold(delta_time)
 
     def on_draw(self):
@@ -131,9 +133,7 @@ class ReactionBenchView(BenchView):
         elif self.mode == "select_vessel":
             self.draw_vessel_picker()
         elif self.mode == "select_amount":
-            self.draw_amount_menu()
-        elif self.mode == "slider":
-            self.draw_slider_screen()
+            self.draw_amount_screen()
         else:
             self.draw_section()
 
@@ -188,8 +188,6 @@ class ReactionBenchView(BenchView):
             self.handle_vessel_keys(key)
         elif self.mode == "select_amount":
             self.handle_amount_menu_keys(key)
-        elif self.mode == "slider":
-            self.handle_slider_keys(key)
         else:
             self.handle_section_keys(key)
 
@@ -284,43 +282,167 @@ class ReactionBenchView(BenchView):
             self.reset_cursor()
             return
         self.pending_vessel = vessel
-        self.pending_min_moles, self.pending_max_moles = bounds
+        self.pending_min_moles, self.pending_max_moles, self.pending_max_limiting_factor = bounds
+        self._init_slider_value()
         self.mode = "select_amount"
         self.reset_cursor()
 
-    def draw_amount_menu(self):
-        self.draw_title("PICK AN AMOUNT")
-        self.draw_centered_menu([(option, True) for option in self.amount_menu_options])
-        self.draw_instructions("UP/DOWN to choose, ENTER to select, ESC to go back")
+    # ---- the merged Max/Slider amount screen ----
 
-    def handle_amount_menu_keys(self, key):
-        if key in (arcade.key.UP, arcade.key.W):
-            self.cursor_index = (self.cursor_index - 1) % len(self.amount_menu_options)
-        elif key in (arcade.key.DOWN, arcade.key.S):
-            self.cursor_index = (self.cursor_index + 1) % len(self.amount_menu_options)
-        elif key == arcade.key.ENTER:
-            choice = self.amount_menu_options[self.cursor_index]
-            if choice == "Max":
-                self._confirm_amount(self.pending_max_moles)
-            elif choice == "Slider":
-                self._enter_slider()
-        elif key == arcade.key.ESCAPE:
-            self.mode = "select_vessel"
-            self.reset_cursor()
-
-    # ---- the slider itself ----
-
-    def _enter_slider(self):
+    def _init_slider_value(self):
+        """Sets a sensible starting slider_value when the amount screen is
+        entered, snapped onto the step grid so it could also be reached by
+        stepping left/right from it."""
         step = self.pending_definition.scale_step
         floor = min(step, self.pending_max_moles)
         default = min(1.0, self.pending_max_moles)
-        # Snap the default onto the step grid so the slider starts somewhere
-        # it could also land on by stepping.
         default = math.floor((default / step) + 1e-9) * step
         self.slider_value = max(floor, default)
         self.slider_hold_elapsed = 0.0
         self.slider_repeat_timer = 0.0
-        self.mode = "slider"
+
+    def _selected_reference_moles(self) -> float:
+        """The reference-reagent moles implied by whichever row the cursor
+        is currently on -- row 0 (Max) or row 1 (the slider)."""
+        return self.pending_max_moles if self.cursor_index == 0 else self.slider_value
+
+    def _native_amount_desc(self, identity: str, moles: float) -> str:
+        """'<amount> <unit>' for `moles` of `identity`, using whatever
+        inventory entry currently supplies it (so a solution's own
+        concentration is used, not some other unit) -- or, if nothing
+        supplies it yet (e.g. a product not yet in inventory), the species
+        catalog entry for its own name. Falls back to plain moles if there's
+        no species definition to convert with."""
+        inventory = self.window.chemical_inventory
+        lookup_name = inventory.resolve_supplier(identity) or identity
+        try:
+            species = inventory.species_for(lookup_name)
+        except KeyError:
+            return f"{moles:.2f} mol"
+        amount = moles / species.moles_per_unit()
+        return f"{amount:.1f} {species.unit_label()}"
+
+    def _max_row_label(self) -> str:
+        factor = self.pending_max_limiting_factor
+        if factor == "vessel":
+            limit_desc = "limited by vessel volume"
+        else:
+            limit_desc = f"limited by {factor}, {self.pending_max_moles:.2f} mol"
+        return f"Max ({limit_desc})"
+
+    def _slider_row_label(self) -> str:
+        ref = reference_reagent_for(self.pending_definition)
+        native = self._native_amount_desc(ref, self.slider_value)
+        return f"{self.slider_value:.2f} mol {ref}, {native}"
+
+    def _preview_lines(self) -> list[str]:
+        """Reagent amounts (moles + native units, naming whichever actual
+        inventory item supplies each one -- e.g. "HBr as 48% hydrobromic
+        acid" -- with the limiting reagent flagged) and theoretical (100%
+        efficiency, ignoring condition_score) product yield, for whichever
+        amount is currently selected -- Max or the slider. "" entries are
+        blank spacer lines for the caller to render as extra vertical gap
+        rather than text."""
+        definition = self.pending_definition
+        inventory = self.window.chemical_inventory
+        selected = self._selected_reference_moles()
+        reagents = reagents_for_scale(definition, selected)
+
+        lines = ["Reagents"]
+        for name, moles in reagents.items():
+            supplier = inventory.resolve_supplier(name) or name
+            display_name = name if supplier == name else f"{name} as {supplier}"
+            tag = " (limiting)" if name == self.pending_max_limiting_factor else ""
+            native = self._native_amount_desc(name, moles)
+            lines.append(f"{display_name}{tag}: {moles:.2f} mol ({native})")
+
+        lines.append("")
+        lines.append("Product(s)")
+        ref = reference_reagent_for(definition)
+        ref_coeff = definition.reactants[ref]
+        scale = selected / ref_coeff if ref_coeff else 0.0
+        for product, stoich in definition.products.items():
+            moles = stoich * scale
+            native = self._native_amount_desc(product, moles)
+            lines.append(f"{product} (theoretical): {moles:.2f} mol ({native})")
+        return lines
+
+    def draw_amount_screen(self):
+        self.draw_title(self.pending_name or "PICK AN AMOUNT")
+        self.draw_centered_menu([(self._max_row_label(), True), (self._slider_row_label(), True)])
+
+        center_x = self.title_text.x
+        bar_y = LIST_START_Y - 2 * 40 - 30
+        left = center_x - SLIDER_WIDTH / 2
+        right = center_x + SLIDER_WIDTH / 2
+        bottom = bar_y - SLIDER_HEIGHT / 2
+        top = bar_y + SLIDER_HEIGHT / 2
+
+        selected = self._selected_reference_moles()
+        fraction = 0.0 if self.pending_max_moles <= 0 else selected / self.pending_max_moles
+        fraction = max(0.0, min(1.0, fraction))
+        fill_x = left + SLIDER_WIDTH * fraction
+
+        arcade.draw_lrbt_rectangle_outline(left, right, bottom, top, arcade.color.BLACK, border_width=2)
+        if fraction > 0:
+            arcade.draw_lrbt_rectangle_filled(left, fill_x, bottom, top, arcade.color.ORANGE)
+
+        for tick_fraction in (0.25, 0.5, 0.75):
+            tick_x = left + SLIDER_WIDTH * tick_fraction
+            arcade.draw_line(tick_x, bottom - 4, tick_x, top + 4, arcade.color.GRAY, 1)
+
+        if self.pending_max_moles > 0:
+            min_fraction = max(0.0, min(1.0, self.pending_min_moles / self.pending_max_moles))
+            min_x = left + SLIDER_WIDTH * min_fraction
+            arcade.draw_line(min_x, bottom - 8, min_x, top + 8, arcade.color.DARK_YELLOW, 2)
+
+        arcade.draw_line(fill_x, bottom - 8, fill_x, top + 8, arcade.color.RED, 3)
+
+        below_min = selected < self.pending_min_moles
+        value_color = arcade.color.DARK_YELLOW if below_min else arcade.color.BLACK
+        self.text_pool.get(2, f"{selected:.2f} mol selected  (max {self.pending_max_moles:.2f} mol)",
+            center_x, bar_y - 34, value_color, font_size=16, anchor_x="center").draw()
+
+        next_index = 3
+        if below_min:
+            self.text_pool.get(3, "Below recommended minimum -- yield may suffer",
+                center_x, bar_y - 56, arcade.color.DARK_YELLOW, font_size=13, anchor_x="center").draw()
+            next_index = 4
+
+        preview_y = bar_y - 56 - (22 if below_min else 0) - 20
+        for line in self._preview_lines():
+            if line == "":
+                preview_y -= 10
+                continue
+            is_header = line in ("Reagents", "Product(s)")
+            color = arcade.color.DARK_BLUE if is_header else arcade.color.BLACK
+            font_size = 15 if is_header else 14
+            self.text_pool.get(next_index, line, center_x, preview_y,
+                color, font_size=font_size, anchor_x="center").draw()
+            preview_y -= 22
+            next_index += 1
+
+        self.draw_instructions(
+            "UP/DOWN to choose Max/Slider, LEFT/RIGHT to adjust slider, ENTER to confirm, ESC to go back")
+
+    def handle_amount_menu_keys(self, key):
+        if key in (arcade.key.UP, arcade.key.W):
+            self.cursor_index = (self.cursor_index - 1) % 2
+        elif key in (arcade.key.DOWN, arcade.key.S):
+            self.cursor_index = (self.cursor_index + 1) % 2
+        elif key == arcade.key.LEFT and self.cursor_index == 1:
+            self._slider_step(-1)
+            self.slider_hold_elapsed = 0.0
+            self.slider_repeat_timer = SLIDER_INITIAL_REPEAT_DELAY
+        elif key == arcade.key.RIGHT and self.cursor_index == 1:
+            self._slider_step(1)
+            self.slider_hold_elapsed = 0.0
+            self.slider_repeat_timer = SLIDER_INITIAL_REPEAT_DELAY
+        elif key == arcade.key.ENTER:
+            self._confirm_amount(self._selected_reference_moles())
+        elif key == arcade.key.ESCAPE:
+            self.mode = "select_vessel"
+            self.reset_cursor()
 
     def _slider_grid_max(self) -> float:
         """The largest value that's an exact multiple of the recipe's
@@ -365,64 +487,6 @@ class ReactionBenchView(BenchView):
             interval = max(SLIDER_MIN_REPEAT_INTERVAL,
                             SLIDER_INITIAL_REPEAT_DELAY - self.slider_hold_elapsed * SLIDER_REPEAT_ACCEL)
             self.slider_repeat_timer = interval
-
-    def draw_slider_screen(self):
-        self.draw_title(self.pending_name or "AMOUNT")
-
-        center_x = self.title_text.x
-        bar_y = self.title_text.y + SLIDER_Y_OFFSET - 60
-        left = center_x - SLIDER_WIDTH / 2
-        right = center_x + SLIDER_WIDTH / 2
-        bottom = bar_y - SLIDER_HEIGHT / 2
-        top = bar_y + SLIDER_HEIGHT / 2
-
-        fraction = 0.0 if self.pending_max_moles <= 0 else self.slider_value / self.pending_max_moles
-        fraction = max(0.0, min(1.0, fraction))
-        fill_x = left + SLIDER_WIDTH * fraction
-
-        arcade.draw_lrbt_rectangle_outline(left, right, bottom, top, arcade.color.BLACK, border_width=2)
-        if fraction > 0:
-            arcade.draw_lrbt_rectangle_filled(left, fill_x, bottom, top, arcade.color.ORANGE)
-
-        # 1/4, 1/2, 3/4 tick marks
-        for tick_fraction in (0.25, 0.5, 0.75):
-            tick_x = left + SLIDER_WIDTH * tick_fraction
-            arcade.draw_line(tick_x, bottom - 4, tick_x, top + 4, arcade.color.GRAY, 1)
-
-        # Recommended-minimum marker
-        if self.pending_max_moles > 0:
-            min_fraction = max(0.0, min(1.0, self.pending_min_moles / self.pending_max_moles))
-            min_x = left + SLIDER_WIDTH * min_fraction
-            arcade.draw_line(min_x, bottom - 8, min_x, top + 8, arcade.color.DARK_YELLOW, 2)
-
-        # Current-value indicator (doesn't need to land exactly on the fill edge)
-        arcade.draw_line(fill_x, bottom - 8, fill_x, top + 8, arcade.color.RED, 3)
-
-        below_min = self.slider_value < self.pending_min_moles
-        value_color = arcade.color.DARK_YELLOW if below_min else arcade.color.BLACK
-        self.text_pool.get(0, f"{self.slider_value:.2f} mol  (max {self.pending_max_moles:.2f} mol)",
-            center_x, bar_y - 34, value_color, font_size=16, anchor_x="center").draw()
-
-        if below_min:
-            self.text_pool.get(1, "Below recommended minimum -- yield may suffer",
-                center_x, bar_y - 56, arcade.color.DARK_YELLOW, font_size=13, anchor_x="center").draw()
-
-        self.draw_instructions("LEFT/RIGHT to adjust, ENTER to confirm, ESC to go back")
-
-    def handle_slider_keys(self, key):
-        if key == arcade.key.LEFT:
-            self._slider_step(-1)
-            self.slider_hold_elapsed = 0.0
-            self.slider_repeat_timer = SLIDER_INITIAL_REPEAT_DELAY
-        elif key == arcade.key.RIGHT:
-            self._slider_step(1)
-            self.slider_hold_elapsed = 0.0
-            self.slider_repeat_timer = SLIDER_INITIAL_REPEAT_DELAY
-        elif key == arcade.key.ENTER:
-            self._confirm_amount(self.slider_value)
-        elif key == arcade.key.ESCAPE:
-            self.mode = "select_amount"
-            self.reset_cursor()
 
     def _confirm_amount(self, reference_moles: float):
         definition = self.pending_definition

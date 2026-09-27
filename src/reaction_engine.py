@@ -134,15 +134,19 @@ def reaction_scale_bounds(
     definition: ReactionDefinition,
     inventory: ChemicalInventory,
     flask_capacity_ml: float,
-) -> tuple[float, float] | None:
+) -> tuple[float, float, str] | None:
     """
-    (recommended_min_moles, max_moles) of the reference reagent for running
-    this reaction in a vessel of flask_capacity_ml:
-      - max_moles fills MAX_FILL_FRACTION of the vessel -- a hard cap, since
-        past this the reaction mixture just doesn't fit.
-      - recommended_min_moles fills RECOMMENDED_MIN_FILL_FRACTION -- a
-        suggestion, not enforced (a smaller amount is allowed; see
-        start_reaction's underfill yield penalty).
+    (recommended_min_moles, max_moles, limiting_factor) of the reference
+    reagent for running this reaction in a vessel of flask_capacity_ml:
+      - max_moles is the smaller of two caps -- however much the vessel can
+        physically hold (MAX_FILL_FRACTION of it), and however much of the
+        scarcest reagent is actually in stock -- so "max" always means "as
+        much as you can actually make right now," never more than you have
+        ingredients for. limiting_factor names whichever one is binding:
+        "vessel", or the reactant name that ran out first.
+      - recommended_min_moles fills RECOMMENDED_MIN_FILL_FRACTION of the
+        vessel -- a suggestion, not enforced (a smaller amount is allowed;
+        see start_reaction's underfill yield penalty).
 
     Both scale with how concentrated whatever's currently supplying each
     reagent is -- a stronger acid solution needs less volume per mole, so
@@ -153,10 +157,24 @@ def reaction_scale_bounds(
     ml_per_reference_mole = reaction_volume_ml(unit_reagents, inventory)
     if not ml_per_reference_mole:
         return None
-    return (
-        flask_capacity_ml * RECOMMENDED_MIN_FILL_FRACTION / ml_per_reference_mole,
-        flask_capacity_ml * MAX_FILL_FRACTION / ml_per_reference_mole,
-    )
+
+    recommended_min = flask_capacity_ml * RECOMMENDED_MIN_FILL_FRACTION / ml_per_reference_mole
+    max_moles = flask_capacity_ml * MAX_FILL_FRACTION / ml_per_reference_mole
+    limiting_factor = "vessel"
+
+    ref = reference_reagent_for(definition)
+    ref_coeff = definition.reactants[ref]
+    for name, coeff in definition.reactants.items():
+        # How many reference-moles the reagent currently in stock for `name`
+        # would allow, at this recipe's ratio -- e.g. if `name` needs twice
+        # as many moles per reference-mole as the reference reagent, its
+        # available stock allows half as many reference-moles.
+        allowed_by_stock = inventory.available_moles(name) * ref_coeff / coeff
+        if allowed_by_stock < max_moles:
+            max_moles = allowed_by_stock
+            limiting_factor = name
+
+    return recommended_min, max_moles, limiting_factor
 
 
 # ===============================================================
