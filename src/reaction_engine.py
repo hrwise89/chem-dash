@@ -57,6 +57,22 @@ class ReactionDefinition:
 
 
 @dataclass
+class ReactionLogEntry:
+    """A permanent record of a completed reaction, kept after its
+    ReactionProcess is discarded, so the player can look back at what
+    conditions produced what yield (the notebook's reaction history)."""
+    reaction_name: str
+    start_time: float
+    end_time: float
+    solvent: str | None
+    temperature: float
+    scheduled_hours: float
+    yield_fraction: float          # definition.efficiency * condition_score
+    products: dict[str, float]
+    side_products: dict[str, float]
+
+
+@dataclass
 class ReactionProcess:
     """An in-progress reaction: reagents consumed and equipment reserved,
     waiting for the game clock to reach end_time before it can be collected."""
@@ -179,6 +195,7 @@ class ReactionEngine:
     def __init__(self, reaction_file: str):
         self.reaction_db = self._load_reactions(reaction_file)
         self.active_processes: dict[str, ReactionProcess] = {}
+        self.history: list[ReactionLogEntry] = []
         self._process_id_counter = itertools.count(1)
 
     def _load_reactions(self, path: str) -> dict[str, ReactionDefinition]:
@@ -373,6 +390,18 @@ class ReactionEngine:
 
         equipment_inventory.release_set(process.equipment_ids)
         del self.active_processes[process_id]
+
+        self.history.append(ReactionLogEntry(
+            reaction_name=process.reaction_name,
+            start_time=process.start_time,
+            end_time=process.end_time,
+            solvent=process.solvent,
+            temperature=process.temperature,
+            scheduled_hours=process.scheduled_hours,
+            yield_fraction=efficiency,
+            products=dict(products),
+            side_products={s: products[s] for s in definition.side_products if s in products},
+        ))
 
         logger.info("Collected '%s' (%s): %s; released equipment %s",
                     process.reaction_name, process_id, products, process.equipment_ids)

@@ -34,12 +34,13 @@ class ReactionBenchView(BenchView):
 
     def __init__(self, window, lab_view):
         super().__init__(window, lab_view, title="Reaction Bench")
-        # "overview" | "equipment" | "recipes" | "notebook" | "inventory"
-        # | "select_vessel" | "select_amount" | "slider" (the last three are
-        # the sub-flow for starting a reaction: pick a recipe -> pick a
-        # vessel -> pick an amount, either "Max" or a hand-adjusted slider)
+        # "overview" | "equipment" | "recipes" | "notebook" | "history"
+        # | "inventory" | "select_vessel" | "select_amount" | "slider" (the
+        # last three are the sub-flow for starting a reaction: pick a
+        # recipe -> pick a vessel -> pick an amount, either "Max" or a
+        # hand-adjusted slider)
         self.mode = "overview"
-        self.sections = ["equipment", "recipes", "notebook", "inventory"]
+        self.sections = ["equipment", "recipes", "notebook", "history", "inventory"]
 
         self.keys_held: set[int] = set()
 
@@ -77,11 +78,22 @@ class ReactionBenchView(BenchView):
             procs = self.window.reaction_engine.active_processes.values()
             return [(f"{p.reaction_name} ({p.time_remaining(clock):.1f}h left)", p) for p in procs]
 
+        if self.mode == "history":
+            # Most recent first, so the player's latest run of a recipe is
+            # the first thing they see when checking what yield to expect.
+            entries = list(reversed(self.window.reaction_engine.history))
+            return [(self._history_label(entry), entry) for entry in entries]
+
         if self.mode == "inventory":
             inventory = self.window.chemical_inventory
             return [(f"{name}: {inventory.describe(name)}", name) for name in inventory.contents]
 
         return []
+
+    def _history_label(self, entry) -> str:
+        solvent_desc = entry.solvent or "no solvent"
+        return (f"{entry.reaction_name} -- {entry.yield_fraction * 100:.0f}% yield "
+                f"(t={entry.start_time:.1f}h, {solvent_desc}, {entry.temperature:.0f}C, {entry.scheduled_hours:.1f}h)")
 
     def _equipment_rows(self):
         """

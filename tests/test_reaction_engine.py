@@ -501,6 +501,45 @@ class TestReactionEngine(unittest.TestCase):
                 self.engine.collect_reaction(process.process_id, inventory, equipment, self.clock)
         self.assertTrue(any("remaining" in message.lower() for message in log.output))
 
+    # --- Reaction history (notebook log) ---
+    def test_collect_appends_history_entry(self):
+        inventory = self.make_inventory(HBr=1.0, ethanol=1.0)
+        equipment = EquipmentInventory()
+        make_full_rig(equipment)
+
+        self.assertEqual(self.engine.history, [])
+        self.run_to_completion(inventory, equipment, {"HBr": 1.0, "ethanol": 1.0}, "neat", 20.0, 4.0)
+
+        self.assertEqual(len(self.engine.history), 1)
+        entry = self.engine.history[0]
+        self.assertEqual(entry.reaction_name, "HBr + ethanol → ethyl bromide")
+        self.assertEqual(entry.solvent, "neat")
+        self.assertEqual(entry.temperature, 20.0)
+        self.assertEqual(entry.scheduled_hours, 4.0)
+        self.assertAlmostEqual(entry.yield_fraction, 1.0, places=6)
+        self.assertAlmostEqual(entry.products["ethyl bromide (crude)"], 1.0, places=2)
+        self.assertIn("water", entry.side_products)
+
+    def test_history_yield_fraction_reflects_condition_penalties(self):
+        inventory = self.make_inventory(HBr=1.0, ethanol=1.0)
+        equipment = EquipmentInventory()
+        make_full_rig(equipment)
+
+        # Wrong solvent halves the yield -- the logged yield_fraction should
+        # say so even though the reaction still "succeeded".
+        self.run_to_completion(inventory, equipment, {"HBr": 1.0, "ethanol": 1.0}, "toluene", 20.0, 4.0)
+        entry = self.engine.history[0]
+        self.assertAlmostEqual(entry.yield_fraction, 0.5, places=6)
+
+    def test_history_accumulates_across_multiple_reactions(self):
+        inventory = self.make_inventory(HBr=2.0, ethanol=2.0)
+        equipment = EquipmentInventory()
+        make_full_rig(equipment)
+
+        self.run_to_completion(inventory, equipment, {"HBr": 1.0, "ethanol": 1.0}, "neat", 20.0, 4.0)
+        self.run_to_completion(inventory, equipment, {"HBr": 1.0, "ethanol": 1.0}, "neat", 20.0, 4.0)
+        self.assertEqual(len(self.engine.history), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
