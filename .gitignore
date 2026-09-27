@@ -5,5 +5,8 @@ __pycache__/
 # Dev-mode log output (devtools.py) -- local runtime data, not source
 chem_dash.log
 
+# Autosaved game state (save_game.py) -- local runtime data, not source
+save.json
+
 # macOS Finder metadata
 .DS_Store

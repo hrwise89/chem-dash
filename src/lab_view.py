@@ -15,12 +15,13 @@ from room_geometry import (
 	BENCH_BOTTOM_ROW, BENCH_TOP_ROW, DEFAULT_X, DEFAULT_Y, DOOR_COL, DOOR_ROW,
 	PURIFY_COL, REACTION_COL, draw_door_marker, room_x, room_y, wall_sprites,
 )
+from save_game import save_game
 from timer_manager import TimerManager, Timer
 from devtools import logger
 
 
 class LabView(arcade.View):
-	def __init__(self, window):
+	def __init__(self, window, player_start: tuple[int, int] | None = None):
 		# View level attributes
 		super().__init__()
 		self.window = window
@@ -33,8 +34,10 @@ class LabView(arcade.View):
 		self.slide_speed = self.move_speed * 0.9
 		self.time_since_move = 0.0
 
-		# Player
-		self.player = Player(DEFAULT_X, DEFAULT_Y)
+		# Player -- player_start restores a loaded save's position;
+		# defaults to the usual spawn point for a fresh game.
+		start_row, start_col = player_start if player_start is not None else (DEFAULT_X, DEFAULT_Y)
+		self.player = Player(start_row, start_col)
 		self.all_sprites = arcade.SpriteList()
 		self.all_sprites.append(self.player)
 
@@ -254,6 +257,11 @@ class LabView(arcade.View):
 			total = sum(c.reward for c in paid)
 			logger.info("Overnight payments: %s (total $%.2f)", [c.title for c in paid], total)
 			message = f"{message} Payment received: ${total:.2f} ({len(paid)} order(s))."
+
+		# Autosave at each day boundary -- going home or passing out are
+		# the only points a "day" actually ends, so they're the natural
+		# place to persist progress without needing a save menu yet.
+		save_game(self.window, self.player.row, self.player.col)
 
 		self.show_status(message)
 

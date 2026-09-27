@@ -19,6 +19,7 @@ from day_manager import DayManager  # noqa: E402
 from economy import ContractBoard, Wallet, load_contract_offers  # noqa: E402
 from devtools import install_crash_logging  # noqa: E402
 from message_log import MessageLog  # noqa: E402
+from save_game import load_game  # noqa: E402
 from skills import PlayerSkills  # noqa: E402
 
 STARTING_BALANCE = 200.0
@@ -59,8 +60,13 @@ def main():
 
 	window.timer_manager = TimerManager()  # attach it to the window
 
+	# Resume a save from the last day boundary, if one exists (see
+	# lab_view.py's autosave in _start_new_day) -- overwrites the fresh
+	# state above in place and hands back where the player was standing.
+	player_start = load_game(window)
+
 	# Create labview
-	lab_view = LabView(window)
+	lab_view = LabView(window, player_start=player_start)
 
 	window.show_view(lab_view)
 	arcade.run()
