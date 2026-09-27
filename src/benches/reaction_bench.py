@@ -49,8 +49,8 @@ class ReactionBenchView(BenchView):
             return [(f"{p.reaction_name} ({p.time_remaining(clock):.1f}h left)", p) for p in procs]
 
         if self.mode == "inventory":
-            contents = self.window.chemical_inventory.contents
-            return [(f"{name}: {amount:.2f} mol", name) for name, amount in contents.items()]
+            inventory = self.window.chemical_inventory
+            return [(f"{name}: {inventory.describe(name)}", name) for name in inventory.contents]
 
         return []
 

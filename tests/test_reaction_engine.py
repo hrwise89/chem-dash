@@ -9,12 +9,32 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from game_clock import GameClock
 from inventory import (
     ChemicalInventory,
+    ChemicalSpecies,
     EquipmentInventory,
     EquipmentUnavailableError,
 )
 from reaction_engine import ReactionEngine, ReactionNotReadyError, batch_reagents_for_flask
 
 FULL_RIG = ["rb_flask", "condenser", "tubing", "heating_mantle", "stir_bar", "magnetic_stirrer"]
+
+# These tests are about reaction logic (stoichiometry, equipment,
+# timing, logging) -- not the mass/volume/solution conversions, which get
+# their own dedicated coverage in test_inventory.py. So every chemical here
+# is defined as an idealized "liquid" with molarity 1000 mol/L (1 mol per
+# mL), making native inventory amounts numerically equal to moles, and
+# every make_inventory(chem=amt) call below reads exactly like it did
+# before ChemicalInventory switched to mass/volume-based storage.
+IDENTITY_MOLARITY = 1000.0
+
+
+def _identity_species(*names) -> dict[str, ChemicalSpecies]:
+    return {name: ChemicalSpecies(name=name, state="liquid", molarity=IDENTITY_MOLARITY) for name in names}
+
+
+TEST_SPECIES_CATALOG = _identity_species(
+    "HBr", "ethanol", "sodium cyanide", "ethyl bromide", "ethyl cyanide",
+    "NaOH", "water", "sodium bromide",
+)
 
 
 def make_full_rig(equipment_inventory: EquipmentInventory, flask_capacity: float = 2.0):
@@ -34,7 +54,7 @@ class TestReactionEngine(unittest.TestCase):
         self.clock = GameClock()
 
     def make_inventory(self, **kwargs):
-        inv = ChemicalInventory()
+        inv = ChemicalInventory(species_catalog=TEST_SPECIES_CATALOG)
         for chem, amt in kwargs.items():
             inv.add(chem, amt)
         return inv

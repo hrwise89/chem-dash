@@ -15,8 +15,7 @@ to purify are planned:
 import random
 
 from devtools import logger
-
-CRUDE_SUFFIX = " (crude)"
+from inventory import CRUDE_SUFFIX, NotCrudeError, is_crude, pure_name_for  # noqa: F401 -- re-exported
 
 # Auto-purify's default yield range and time cost. Deliberately worse than
 # a well-run manual purification will eventually be -- that gap is the
@@ -24,21 +23,6 @@ CRUDE_SUFFIX = " (crude)"
 AUTO_PURIFY_MIN_YIELD = 0.80
 AUTO_PURIFY_MAX_YIELD = 0.95
 AUTO_PURIFY_TIME_COST_HOURS = 0.25  # 15 minutes
-
-
-class NotCrudeError(ValueError):
-    """Raised when asked to purify something that isn't a crude chemical."""
-
-
-def is_crude(name: str) -> bool:
-    return name.endswith(CRUDE_SUFFIX)
-
-
-def pure_name_for(crude_name: str) -> str:
-    """'ethyl bromide (crude)' -> 'ethyl bromide'."""
-    if not is_crude(crude_name):
-        raise NotCrudeError(f"'{crude_name}' is not a crude chemical (no '{CRUDE_SUFFIX}' suffix)")
-    return crude_name[: -len(CRUDE_SUFFIX)]
 
 
 def auto_purify(
@@ -73,8 +57,16 @@ def auto_purify(
     inventory.add(pure_name, purified_amount)
     game_clock.advance(time_cost_hours)
 
+    # Native units (g/mL) come from the species catalog when the inventory
+    # has one; falls back to a generic label so this stays usable against a
+    # bare ChemicalInventory() with no catalog (e.g. in unit tests).
+    try:
+        unit = inventory.species_for(pure_name).unit_label()
+    except (KeyError, AttributeError):
+        unit = "units"
+
     logger.info(
-        "Auto-purified %.2f mol %s -> %.2f mol %s (%.1f%% yield), +%.2fh",
-        amount, crude_name, purified_amount, pure_name, yield_fraction * 100, time_cost_hours,
+        "Auto-purified %.2f %s %s -> %.2f %s %s (%.1f%% yield), +%.2fh",
+        amount, unit, crude_name, purified_amount, unit, pure_name, yield_fraction * 100, time_cost_hours,
     )
     return pure_name, purified_amount, yield_fraction

@@ -2,12 +2,29 @@
 Inventory systems for Chem Dash.
 
 Two kinds of inventory:
-  - ChemicalInventory: tracks chemical stock in moles. Purity is tracked as a
-    binary crude/pure state encoded directly in the chemical's name (e.g.
-    "ethyl bromide" vs "ethyl bromide (crude)"), consistent with how the
-    reaction engine already labels its crude output. Purification mini-games
-    (column, recrystallization) are what will move stock from the "(crude)"
-    key to the plain (pure) key.
+  - ChemicalInventory: tracks chemical stock in real-world units -- grams
+    for a solid, mL for a liquid or a solution -- rather than moles
+    directly. What a name actually means physically (its state, molecular
+    weight, and for a liquid/solution its molarity) lives in a separate
+    "species catalog" (see ChemicalSpecies below), so the same inventory
+    entry can answer "how many moles of X do I have" on demand.
+
+    A solution (e.g. "48% hydrobromic acid") is a container for some other
+    reactive species (its `solute`, e.g. "HBr"): a reaction that calls for
+    HBr can be supplied by any solution whose solute is HBr, without the
+    solution masquerading as pure HBr in the inventory list. Resolving
+    "what supplies chemical X" is resolve_supplier(); has_moles(),
+    remove_moles(), and add_moles() are the mole-based read/write API that
+    reaction_engine.py (and anything else that thinks in moles) should use
+    -- add()/remove()/has() stay as the low-level, unit-agnostic API for
+    loaders and code (like purification.py) that only needs to move a
+    physical quantity around without caring what it converts to.
+
+    Purity is tracked as a binary crude/pure state encoded directly in the
+    chemical's name (e.g. "ethyl bromide" vs "ethyl bromide (crude)"),
+    consistent with how the reaction engine already labels its crude
+    output; crude and pure forms share the same species definition (same
+    substance, just impure), so species lookups strip the suffix.
   - EquipmentInventory: tracks discrete pieces of lab glassware/equipment
     (RB flasks, condensers, tubing, heating mantles, stir bars, magnetic
     stirrers, ...). Each item can be free or in_use. Reservations for a
@@ -17,17 +34,115 @@ Two kinds of inventory:
 
 import itertools
 import json
+import os
 from dataclasses import dataclass
+
+# ===============================================================
+# Crude/pure naming
+# ===============================================================
+# A single, shared place for the "(crude)" naming convention -- both
+# ChemicalInventory (species lookups) and purification.py (which chemicals
+# count as purifiable) need it, so it lives here rather than being defined
+# twice.
+
+CRUDE_SUFFIX = " (crude)"
+
+
+class NotCrudeError(ValueError):
+    """Raised when asked to treat something as crude that isn't."""
+
+
+def is_crude(name: str) -> bool:
+    return name.endswith(CRUDE_SUFFIX)
+
+
+def pure_name_for(crude_name: str) -> str:
+    """'ethyl bromide (crude)' -> 'ethyl bromide'."""
+    if not is_crude(crude_name):
+        raise NotCrudeError(f"'{crude_name}' is not a crude chemical (no '{CRUDE_SUFFIX}' suffix)")
+    return crude_name[: -len(CRUDE_SUFFIX)]
+
+
+def canonical_species_name(name: str) -> str:
+    """The name to look up in the species catalog: crude and pure forms of
+    the same substance share one definition, so a crude name resolves to
+    its pure name first."""
+    return pure_name_for(name) if is_crude(name) else name
+
+
+# ===============================================================
+# Chemical species catalog
+# ===============================================================
+
+@dataclass
+class ChemicalSpecies:
+    """
+    What a chemical *is*, independent of how much of it you have:
+      - "solid": tracked in grams; needs molecular_weight to convert to moles.
+      - "liquid": tracked in mL; needs molarity (mol/L) to convert to moles
+        (for a pure liquid this is its neat concentration -- moles per
+        liter of the liquid itself, derivable from density/molecular_weight).
+      - "solution": tracked in mL like a liquid, but stands in for some
+        other reactive species (`solute`) rather than being that species
+        itself -- e.g. "48% hydrobromic acid" is a solution whose solute
+        is "HBr". `solvent` is informational for now (e.g. "water").
+    """
+    name: str
+    state: str                        # "solid" | "liquid" | "solution"
+    molecular_weight: float | None = None   # g/mol -- required for "solid"
+    molarity: float | None = None           # mol/L -- required for "liquid"/"solution"
+    solute: str | None = None               # required for "solution"
+    solvent: str | None = None              # informational, "solution" only
+
+    def __post_init__(self):
+        if self.state == "solid" and not self.molecular_weight:
+            raise ValueError(f"Solid species '{self.name}' needs a molecular_weight")
+        if self.state in ("liquid", "solution") and not self.molarity:
+            raise ValueError(f"{self.state.capitalize()} species '{self.name}' needs a molarity")
+        if self.state == "solution" and not self.solute:
+            raise ValueError(f"Solution species '{self.name}' needs a solute")
+        if self.state not in ("solid", "liquid", "solution"):
+            raise ValueError(f"Unknown species state '{self.state}' for '{self.name}'")
+
+    def moles_per_unit(self) -> float:
+        """Moles per native unit of stored amount: per gram for a solid,
+        per mL for a liquid or solution (molarity is mol/L, so mol/mL is
+        molarity / 1000)."""
+        if self.state == "solid":
+            return 1.0 / self.molecular_weight
+        return self.molarity / 1000.0
+
+    def unit_label(self) -> str:
+        return "g" if self.state == "solid" else "mL"
+
+
+def load_species_catalog(path: str) -> dict[str, ChemicalSpecies]:
+    """Load a {name: {state, molecular_weight, molarity, solute, solvent}}
+    JSON file into ChemicalSpecies objects."""
+    with open(path, "r") as f:
+        data = json.load(f)
+    return {name: ChemicalSpecies(name=name, **spec) for name, spec in data.items()}
+
 
 # ===============================================================
 # Chemical inventory
 # ===============================================================
 
 class ChemicalInventory:
-    """Tracks available chemicals and quantities in moles."""
+    """
+    Tracks available chemicals by real-world quantity (grams for a solid,
+    mL for a liquid/solution) rather than moles. A species_catalog (see
+    ChemicalSpecies) is what makes moles-based reads/writes possible; an
+    inventory can be built without one (contents-only bookkeeping still
+    works via add()/remove()/has()), but has_moles()/remove_moles()/
+    add_moles()/moles_of()/describe() all need it.
+    """
 
-    def __init__(self):
-        self.contents: dict[str, float] = {}
+    def __init__(self, species_catalog: dict[str, ChemicalSpecies] | None = None):
+        self.contents: dict[str, float] = {}          # name -> amount in native units
+        self.species_catalog = species_catalog or {}
+
+    # ---- low-level, unit-agnostic (grams or mL, whatever the name uses) ----
 
     def add(self, name: str, amount: float):
         self.contents[name] = self.contents.get(name, 0.0) + amount
@@ -38,10 +153,92 @@ class ChemicalInventory:
             if self.contents[name] <= 0:
                 del self.contents[name]
         else:
-            raise ValueError(f"Not enough {name} in inventory to remove {amount} mol")
+            raise ValueError(f"Not enough {name} in inventory to remove {amount}")
 
     def has(self, name: str, amount: float) -> bool:
         return self.contents.get(name, 0.0) >= amount
+
+    # ---- species lookups ----
+
+    def species_for(self, name: str) -> ChemicalSpecies:
+        """The species definition for `name`, stripping a '(crude)' suffix
+        first since crude/pure share one definition. Raises KeyError if
+        the catalog has no entry for it."""
+        lookup_name = canonical_species_name(name)
+        species = self.species_catalog.get(lookup_name)
+        if species is None:
+            raise KeyError(f"No species definition for '{name}' (looked up as '{lookup_name}')")
+        return species
+
+    def moles_of(self, name: str) -> float:
+        """Moles of `name` currently held, computed from its stored
+        quantity and species definition. 0.0 if none is held (even if the
+        species is unknown -- nothing to convert)."""
+        amount = self.contents.get(name, 0.0)
+        if amount <= 0:
+            return 0.0
+        return amount * self.species_for(name).moles_per_unit()
+
+    def describe(self, name: str) -> str:
+        """A human-readable "<amount> <unit> (<moles> mol)" string for the
+        UI, e.g. "700.0 mL (6.16 mol)"."""
+        amount = self.contents.get(name, 0.0)
+        species = self.species_for(name)
+        moles = amount * species.moles_per_unit()
+        return f"{amount:.1f} {species.unit_label()} ({moles:.2f} mol)"
+
+    # ---- moles-based read/write (what reaction_engine.py uses) ----
+
+    def resolve_supplier(self, identity: str) -> str | None:
+        """
+        Which inventory entry (by name) currently supplies chemical
+        `identity` -- either an entry named exactly that, or (failing that)
+        any solution entry whose `solute` is `identity`. Returns None if
+        nothing in inventory supplies it. Does not consider quantity.
+        """
+        if identity in self.contents:
+            return identity
+        for held_name, amount in self.contents.items():
+            if amount <= 0:
+                continue
+            try:
+                species = self.species_for(held_name)
+            except KeyError:
+                continue
+            if species.state == "solution" and species.solute == identity:
+                return held_name
+        return None
+
+    def available_moles(self, identity: str) -> float:
+        """Moles of `identity` available from whatever currently supplies
+        it (0.0 if nothing does)."""
+        supplier = self.resolve_supplier(identity)
+        return self.moles_of(supplier) if supplier else 0.0
+
+    def has_moles(self, identity: str, moles: float) -> bool:
+        return self.available_moles(identity) >= moles
+
+    def remove_moles(self, identity: str, moles: float):
+        """Remove `moles` of `identity` from whatever supplies it (a direct
+        entry, or a solution's stock). Raises ValueError if nothing
+        supplies enough."""
+        supplier = self.resolve_supplier(identity)
+        if supplier is None or not self.has_moles(identity, moles):
+            have = self.available_moles(identity)
+            raise ValueError(
+                f"Not enough {identity} in inventory to remove {moles:.2f} mol (have {have:.2f} mol)"
+            )
+        native_amount = moles / self.species_for(supplier).moles_per_unit()
+        self.remove(supplier, native_amount)
+
+    def add_moles(self, name: str, moles: float):
+        """Add `moles` of `name` to inventory, converted to native units
+        via its own species definition (crude-suffix-aware). Unlike
+        remove_moles, this always adds under `name` directly -- products
+        are stored by their own produced name, not resolved through a
+        solute."""
+        native_amount = moles / self.species_for(name).moles_per_unit()
+        self.add(name, native_amount)
 
     def __repr__(self):
         return f"ChemicalInventory({self.contents})"
@@ -180,9 +377,11 @@ class EquipmentInventory:
 # and reservation state across a load), but both can hand off to the same
 # "build an inventory from this shape" logic here.
 
-def chemical_inventory_from_dict(data: dict) -> ChemicalInventory:
-    """Build a ChemicalInventory from a {chemical_name: moles} mapping."""
-    inventory = ChemicalInventory()
+def chemical_inventory_from_dict(data: dict, species_catalog: dict[str, ChemicalSpecies]) -> ChemicalInventory:
+    """Build a ChemicalInventory from a {chemical_name: amount} mapping,
+    where amount is in that chemical's native units (grams for a solid,
+    mL for a liquid/solution) per species_catalog."""
+    inventory = ChemicalInventory(species_catalog=species_catalog)
     for name, amount in data.items():
         inventory.add(name, amount)
     return inventory
@@ -209,14 +408,25 @@ def equipment_inventory_from_dict(data: list) -> EquipmentInventory:
     return inventory
 
 
-def load_starting_inventories(path: str) -> tuple[ChemicalInventory, EquipmentInventory]:
+def load_starting_inventories(
+    path: str, species_catalog_path: str | None = None,
+) -> tuple[ChemicalInventory, EquipmentInventory]:
     """
     Load the player's default starting chemicals + equipment from a JSON
     file shaped like:
-        {"chemicals": {"HBr": 2.0, ...}, "equipment": [{"type": ..., "name": ...}, ...]}
+        {"chemicals": {"48% hydrobromic acid": 700.0, ...},
+         "equipment": [{"type": ..., "name": ...}, ...]}
+    where each chemical amount is in native units (grams/mL) per the
+    species catalog. species_catalog_path defaults to "chemicals.json" in
+    the same directory as `path`, since a starting loadout and its species
+    catalog are meant to travel together.
     """
+    if species_catalog_path is None:
+        species_catalog_path = os.path.join(os.path.dirname(path), "chemicals.json")
+
     with open(path, "r") as f:
         data = json.load(f)
-    chemicals = chemical_inventory_from_dict(data.get("chemicals", {}))
+    species_catalog = load_species_catalog(species_catalog_path)
+    chemicals = chemical_inventory_from_dict(data.get("chemicals", {}), species_catalog)
     equipment = equipment_inventory_from_dict(data.get("equipment", []))
     return chemicals, equipment

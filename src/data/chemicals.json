@@ -1,0 +1,36 @@
+{
+  "48% hydrobromic acid": {
+    "state": "solution",
+    "solute": "HBr",
+    "solvent": "water",
+    "molarity": 8.8
+  },
+  "ethanol": {
+    "state": "liquid",
+    "molecular_weight": 46.07,
+    "molarity": 17.13
+  },
+  "sodium cyanide": {
+    "state": "solid",
+    "molecular_weight": 49.01
+  },
+  "ethyl bromide": {
+    "state": "liquid",
+    "molecular_weight": 108.97,
+    "molarity": 13.4
+  },
+  "ethyl cyanide": {
+    "state": "liquid",
+    "molecular_weight": 55.08,
+    "molarity": 14.47
+  },
+  "water": {
+    "state": "liquid",
+    "molecular_weight": 18.02,
+    "molarity": 55.49
+  },
+  "sodium bromide": {
+    "state": "solid",
+    "molecular_weight": 102.89
+  }
+}

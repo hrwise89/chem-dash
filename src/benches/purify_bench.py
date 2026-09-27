@@ -108,10 +108,10 @@ class PurifyBenchView(BenchView):
     def crude_chemicals(self):
         """(label, chemical_name) pairs for every crude chemical currently
         in stock (amount > 0)."""
-        contents = self.window.chemical_inventory.contents
+        inventory = self.window.chemical_inventory
         return [
-            (f"{name}: {amount:.2f} mol", name)
-            for name, amount in contents.items()
+            (f"{name}: {inventory.describe(name)}", name)
+            for name, amount in inventory.contents.items()
             if is_crude(name) and amount > 0
         ]
 
@@ -186,17 +186,17 @@ class PurifyBenchView(BenchView):
             self.reset_cursor()
 
     def try_auto_purify(self, crude_name):
+        inventory = self.window.chemical_inventory
         try:
-            pure_name, amount, yield_fraction = auto_purify(
-                self.window.chemical_inventory, self.window.game_clock, crude_name,
-            )
+            pure_name, amount, yield_fraction = auto_purify(inventory, self.window.game_clock, crude_name)
         except ValueError as e:
             self.show_message(str(e), arcade.color.RED)
             return
 
         self.reset_cursor()
+        unit = inventory.species_for(pure_name).unit_label()
         self.show_message(
-            f"Purified {amount:.2f} mol {pure_name} ({yield_fraction * 100:.0f}% yield, -15 min)",
+            f"Purified {amount:.2f} {unit} {pure_name} ({yield_fraction * 100:.0f}% yield, -15 min)",
             arcade.color.DARK_GREEN,
         )
         if not self.crude_chemicals():

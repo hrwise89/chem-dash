@@ -153,11 +153,13 @@ class ReactionEngine:
         returned that will be ready to collect once the game clock reaches
         its end_time.
         """
-        # Check inventory has enough of each reagent
+        # Check inventory has enough of each reagent (resolved through
+        # whatever actually supplies it -- a direct stock, or a solution
+        # whose solute matches, e.g. "48% hydrobromic acid" supplying HBr)
         for r, amt in reagents.items():
-            if not inventory.has(r, amt):
+            if not inventory.has_moles(r, amt):
                 logger.warning("start_reaction rejected: not enough %s (need %.2f mol, have %.2f mol)",
-                                r, amt, inventory.contents.get(r, 0.0))
+                                r, amt, inventory.available_moles(r))
                 raise ValueError(f"Not enough {r} in inventory to run reaction.")
 
         match = self.find_match(reagents)
@@ -209,7 +211,7 @@ class ReactionEngine:
 
         # --- Consume reagents from inventory ---
         for r, amt in reagents.items():
-            inventory.remove(r, amt)
+            inventory.remove_moles(r, amt)
 
         process_id = f"proc_{next(self._process_id_counter)}"
         start_time = game_clock.now()
@@ -267,7 +269,7 @@ class ReactionEngine:
         for product, stoich in definition.products.items():
             amt = stoich * process.limiting_ratio * efficiency
             products[f"{product} (crude)"] = amt
-            inventory.add(f"{product} (crude)", amt)
+            inventory.add_moles(f"{product} (crude)", amt)
 
         # Side products -> tracked in the result for logging, not stored
         for side, stoich in definition.side_products.items():
@@ -283,11 +285,14 @@ class ReactionEngine:
 
 
 if __name__ == "__main__":
-    inv = ChemicalInventory()
-    inv.add("HBr", 2.0)
-    inv.add("ethanol", 2.0)
-    inv.add("sodium cyanide", 1.0)
-    inv.add("ethyl bromide", 1.0)
+    from inventory import load_species_catalog
+
+    species = load_species_catalog("src/data/chemicals.json")
+    inv = ChemicalInventory(species_catalog=species)
+    inv.add("48% hydrobromic acid", 250.0)   # supplies HBr, moles derived from molarity
+    inv.add("ethanol", 150.0)
+    inv.add("sodium cyanide", 50.0)
+    inv.add("ethyl bromide", 100.0)
 
     equipment = EquipmentInventory()
     equipment.add_item("rb_flask", "250 mL RB Flask", capacity=2.0)

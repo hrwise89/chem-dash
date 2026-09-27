@@ -1,8 +1,8 @@
 {
   "chemicals": {
-    "HBr": 6.0,
-    "ethanol": 6.0,
-    "sodium cyanide": 2.0
+    "48% hydrobromic acid": 700.0,
+    "ethanol": 350.0,
+    "sodium cyanide": 100.0
   },
   "equipment": [
     {"type": "rb_flask", "name": "250 mL RB Flask", "capacity": 2.0},
