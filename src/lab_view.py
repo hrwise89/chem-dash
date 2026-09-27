@@ -1,7 +1,7 @@
 import arcade
 from settings import (SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE, SPRITE_SCALING, TILE_SIZE,
-	GRID_WIDTH, GRID_HEIGHT, ROOM_COLS, ROOM_ROWS, ROOM_ORIGIN_X, ROOM_ORIGIN_Y,
-	STATUS_BAR_HEIGHT, MESSAGE_BOX_HEIGHT, PLAYER_COLOR, MAP_BACKGROUND_COLOR,
+	ROOM_COLS, ROOM_ROWS, ROOM_ORIGIN_X, ROOM_ORIGIN_Y,
+	STATUS_BAR_HEIGHT, MESSAGE_BOX_HEIGHT, MAP_BACKGROUND_COLOR,
 	OUTSIDE_ROOM_COLOR, GAME_HOURS_PER_REAL_SECOND)
 from benches.computer_bench import ComputerBenchView
 from benches.purify_bench import PurifyBenchView
@@ -9,114 +9,14 @@ from benches.reaction_bench import ReactionBenchView
 from benches.shipping_bench import ShippingBenchView
 from benches.ui_common import TextPool
 from day_manager import calendar_date_string, clock_time_string
+from door_menu import DoorMenu
+from player import Player
+from room_geometry import (
+	BENCH_BOTTOM_ROW, BENCH_TOP_ROW, DEFAULT_X, DEFAULT_Y, DOOR_COL, DOOR_ROW,
+	PURIFY_COL, REACTION_COL, draw_door_marker, room_x, room_y, wall_sprites,
+)
 from timer_manager import TimerManager, Timer
 from devtools import logger
-
-# Player spawn point (row/col in the room's local grid, 0 at bottom-left),
-# picked to sit clear of every bench and the door.
-DEFAULT_X, DEFAULT_Y = 2, 10
-
-# The door lives IN the left wall (a "chunk of the wall", not a freestanding
-# tile) at the row 2 tiles down from the top of the room -- i.e. the 2nd
-# tile from the top, 0-indexed from the top being row ROOM_ROWS - 1.
-DOOR_ROW = ROOM_ROWS - 2
-DOOR_COL = -1  # just outside the interior's leftmost column, inside the wall
-
-# Top-row benches (reaction, purify) sit flush against the top wall, on the
-# topmost interior row -- an integer row, so a 1-tile-deep bench lines up
-# with the tile grid exactly instead of straddling two rows. The paired
-# bench below each (shipping under reaction, computer under purify) sits
-# exactly 2 tiles south, leaving one full clear tile between the rows for
-# the player to walk through.
-BENCH_TOP_ROW = ROOM_ROWS - 1
-BENCH_BOTTOM_ROW = BENCH_TOP_ROW - 2
-# Bench columns are half-tile-centered on purpose: a 3-tile-wide bench
-# centered on an N.5 column lines its edges up exactly with tile
-# boundaries (tiles N-1, N, N+1), the same way BENCH_TOP_ROW does for a
-# 1-tile-deep bench on a whole row.
-REACTION_COL = 5
-PURIFY_COL = 13
-
-DOOR_MENU_OPTIONS = ["Leave for the day", "Stay in the lab", "Visit university", "Visit the city"]
-
-# The door's own activation tile is the same color as the wall (it IS a
-# chunk of the wall), so it'd otherwise be invisible -- this thin strip
-# just outside it marks where it actually is.
-DOOR_MARKER_WIDTH = TILE_SIZE / 4
-DOOR_MARKER_COLOR = arcade.color.SADDLE_BROWN
-
-
-def _room_x(local_col: float) -> float:
-	"""Local room column (0 at the interior's left edge) -> screen x."""
-	return ROOM_ORIGIN_X + local_col * TILE_SIZE + TILE_SIZE / 2
-
-
-def _room_y(local_row: float) -> float:
-	"""Local room row (0 at the interior's bottom edge) -> screen y."""
-	return ROOM_ORIGIN_Y + local_row * TILE_SIZE + TILE_SIZE / 2
-
-
-class Player(arcade.Sprite):
-	def __init__(self, row: int, col: int, color: tuple[int,int,int] = PLAYER_COLOR):
-		super().__init__()
-		self.texture = arcade.make_soft_square_texture(TILE_SIZE - 2, color,
-			outer_alpha=255)
-		self.row = row
-		self.col = col
-		self.target_x = _room_x(self.col)
-		self.target_y = _room_y(self.row)
-		self.center_x = self.target_x
-		self.center_y = self.target_y
-		self.moving = False
-		self.near_bench = False
-
-	def move(self, d_row: int, d_col: int, collidables: list) -> None:
-		new_row = max(0, min(self.row + d_row, GRID_HEIGHT - 1))
-		new_col = max(0, min(self.col + d_col, GRID_WIDTH - 1))
-
-		# Compute target position
-		target_x = _room_x(new_col)
-		target_y = _room_y(new_row)
-
-		# Test new position
-		old_x, old_y = self.center_x, self.center_y
-		self.center_x, self.center_y = target_x, target_y
-		# Test for collisions from list of collidables
-		for colideable in collidables:
-			if arcade.check_for_collision_with_list(self, colideable):
-				# reset position and return before moving
-				self.center_x, self.center_y = old_x, old_y
-				return
-
-		# Otherwise, move
-		if new_row != self.row or new_col != self.col:
-			self.row = new_row
-			self.col = new_col
-			# Start sliding toward new target
-			self.start_x = self.center_x
-			self.start_y = self.center_y
-			self.target_x = _room_x(self.col)
-			self.target_y = _room_y(self.row)
-			self.moving = True
-			self.move_progress = 0.0
-
-	def update_position(self, delta_time: float, slide_speed: float) -> None:
-		if self.moving:
-			self.move_progress += delta_time / slide_speed
-
-			if self.move_progress >= 1.0:
-				# Snap to target
-				self.center_x = self.target_x
-				self.center_y = self.target_y
-				self.moving = False
-				self.move_progress = 0.0
-			else:
-				t = self.move_progress
-				# eased_t = (1 - math.cos(t * math.pi)) / 2
-				eased_t = t * t * (3 - 2 * t)
-
-				self.center_x = self.start_x + (self.target_x - self.start_x) * eased_t
-				self.center_y = self.start_y + (self.target_y - self.start_y) * eased_t
 
 
 class LabView(arcade.View):
@@ -162,41 +62,30 @@ class LabView(arcade.View):
 		self.message_text_pool = TextPool()
 
 		# Door menu overlay (drawn on top of everything else when open).
-		self.door_menu_open = False
-		self.door_menu_cursor = 0
-		self.door_menu_text_pool = TextPool()
+		self.door_menu = DoorMenu()
 
-		# Walls: a 1-tile-thick perimeter around the room's interior, with a
-		# gap at the door's row in the left wall (the door itself fills it).
-		self.walls = arcade.SpriteList()
-		for local_col in range(-1, ROOM_COLS + 1):
-			self.walls.append(self._wall_tile(ROOM_ROWS, local_col))       # top
-			self.walls.append(self._wall_tile(-1, local_col))              # bottom
-		for local_row in range(ROOM_ROWS):
-			if local_row != DOOR_ROW:
-				self.walls.append(self._wall_tile(local_row, -1))          # left (minus door gap)
-			self.walls.append(self._wall_tile(local_row, ROOM_COLS))       # right
+		self.walls = wall_sprites()
 
 		# Benches
 		bench_specs = [
-			{"name": "bench_hood_1", "x": _room_x(REACTION_COL), "y": _room_y(BENCH_TOP_ROW),
+			{"name": "bench_hood_1", "x": room_x(REACTION_COL), "y": room_y(BENCH_TOP_ROW),
 				"width": TILE_SIZE * 3, "height": TILE_SIZE,
 				"color": arcade.color.DARK_GRAY, "action": "view your hood",
 				"opens": ReactionBenchView},
-			{"name": "bench_col_1", "x": _room_x(PURIFY_COL), "y": _room_y(BENCH_TOP_ROW),
+			{"name": "bench_col_1", "x": room_x(PURIFY_COL), "y": room_y(BENCH_TOP_ROW),
 				"width": TILE_SIZE * 3, "height": TILE_SIZE,
 				"color": arcade.color.BROWN, "action": "purify your products",
 				"opens": PurifyBenchView},
-			{"name": "bench_shipping_1", "x": _room_x(REACTION_COL), "y": _room_y(BENCH_BOTTOM_ROW),
+			{"name": "bench_shipping_1", "x": room_x(REACTION_COL), "y": room_y(BENCH_BOTTOM_ROW),
 				"width": TILE_SIZE * 3, "height": TILE_SIZE,
 				"color": arcade.color.DARK_ORANGE, "action": "use the shipping desk",
 				"opens": ShippingBenchView},
-			{"name": "bench_computer_1", "x": _room_x(PURIFY_COL), "y": _room_y(BENCH_BOTTOM_ROW),
+			{"name": "bench_computer_1", "x": room_x(PURIFY_COL), "y": room_y(BENCH_BOTTOM_ROW),
 				"width": TILE_SIZE * 3, "height": TILE_SIZE,
 				"color": arcade.color.DARK_SLATE_BLUE, "action": "use the computer",
 				"opens": ComputerBenchView},
 			# Additional benches here
-			{"name": "door_home", "x": _room_x(DOOR_COL), "y": _room_y(DOOR_ROW),
+			{"name": "door_home", "x": room_x(DOOR_COL), "y": room_y(DOOR_ROW),
 				"width": TILE_SIZE, "height": TILE_SIZE,
 				"color": arcade.color.SADDLE_BROWN, "action": "go to the door",
 				"is_door": True},
@@ -211,11 +100,6 @@ class LabView(arcade.View):
 				spec["x"], spec["y"], spec["color"])
 			self.benches[spec["name"]] = bench
 			self.bench_list.append(bench)
-
-	@staticmethod
-	def _wall_tile(local_row: int, local_col: int) -> arcade.SpriteSolidColor:
-		return arcade.SpriteSolidColor(TILE_SIZE, TILE_SIZE, _room_x(local_col), _room_y(local_row),
-			arcade.color.BLACK)
 
 	def on_draw(self):
 		self.clear()
@@ -236,20 +120,13 @@ class LabView(arcade.View):
 		self.all_sprites.draw()
 		self.walls.draw()
 		self.bench_list.draw()
-		self.draw_door_marker()
+		draw_door_marker()
 
 		self.draw_status_bar()
 		self.draw_message_box()
 
-		if self.door_menu_open:
-			self.draw_door_menu()
-
-	def draw_door_marker(self):
-		door_left = _room_x(DOOR_COL) - TILE_SIZE / 2
-		door_bottom = _room_y(DOOR_ROW) - TILE_SIZE / 2
-		door_top = door_bottom + TILE_SIZE
-		arcade.draw_lrbt_rectangle_filled(door_left - DOOR_MARKER_WIDTH, door_left, door_bottom, door_top,
-			DOOR_MARKER_COLOR)
+		if self.door_menu.open:
+			self.door_menu.draw()
 
 	def draw_status_bar(self):
 		arcade.draw_lrbt_rectangle_filled(0, SCREEN_WIDTH, SCREEN_HEIGHT - STATUS_BAR_HEIGHT, SCREEN_HEIGHT,
@@ -276,25 +153,8 @@ class LabView(arcade.View):
 			self.message_text_pool.get(i, text, 10, y, arcade.color.BLACK, font_size=13).draw()
 			y += line_height
 
-	def draw_door_menu(self):
-		box_width, box_height = 320, 40 + 24 * len(DOOR_MENU_OPTIONS)
-		center_x, center_y = SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2
-		left, right = center_x - box_width / 2, center_x + box_width / 2
-		bottom, top = center_y - box_height / 2, center_y + box_height / 2
-
-		arcade.draw_lrbt_rectangle_filled(left, right, bottom, top, arcade.color.WHITE)
-		arcade.draw_lrbt_rectangle_outline(left, right, bottom, top, arcade.color.BLACK, border_width=2)
-
-		self.door_menu_text_pool.get(0, "Where to?", center_x, top - 24,
-			arcade.color.BLACK, font_size=16, anchor_x="center").draw()
-		for i, option in enumerate(DOOR_MENU_OPTIONS):
-			color = arcade.color.RED if i == self.door_menu_cursor else arcade.color.BLACK
-			prefix = "> " if i == self.door_menu_cursor else "  "
-			self.door_menu_text_pool.get(i + 1, f"{prefix}{i + 1}. {option}", left + 20, top - 56 - i * 24,
-				color, font_size=14, anchor_x="left").draw()
-
 	def on_update(self, delta_time):
-		if self.door_menu_open:
+		if self.door_menu.open:
 			return  # time (and everything else) pauses while the menu is open
 
 		self.time_since_move += delta_time
@@ -349,41 +209,22 @@ class LabView(arcade.View):
 	def on_key_press(self, key, modifiers):
 		self.keys_held.add(key)
 
-		if key == arcade.key.ESCAPE:
-			if self.door_menu_open:
-				self.door_menu_open = False
-			else:
-				arcade.close_window()
+		if self.door_menu.open:
+			self.door_menu.handle_key(key, on_leave_for_day=self.go_home)
 			return
 
-		if self.door_menu_open:
-			self.handle_door_menu_keys(key)
+		if key == arcade.key.ESCAPE:
+			arcade.close_window()
 			return
 
 		# Interaction with benches
 		if key == arcade.key.SPACE and self.near_bench:
 			if self.near_bench.get("is_door"):
-				self.door_menu_open = True
-				self.door_menu_cursor = 0
+				self.door_menu.show()
 			else:
 				view_class = self.near_bench["opens"]
 				logger.info("Opening %s from bench '%s'", view_class.__name__, self.near_bench["name"])
 				self.window.show_view(view_class(self.window, self))
-
-	def handle_door_menu_keys(self, key):
-		if key in (arcade.key.UP, arcade.key.W):
-			self.door_menu_cursor = (self.door_menu_cursor - 1) % len(DOOR_MENU_OPTIONS)
-		elif key in (arcade.key.DOWN, arcade.key.S):
-			self.door_menu_cursor = (self.door_menu_cursor + 1) % len(DOOR_MENU_OPTIONS)
-		elif key in (arcade.key.ENTER, arcade.key.SPACE):
-			choice = DOOR_MENU_OPTIONS[self.door_menu_cursor]
-			self.door_menu_open = False
-			if choice == "Leave for the day":
-				self.go_home()
-			else:
-				# "Stay in the lab", "Visit university", and "Visit the
-				# city" are all a no-op for now -- just close the menu.
-				logger.debug("Door menu: '%s' selected (currently a no-op)", choice)
 
 	def on_key_release(self, key, modifiers):
 		self.keys_held.discard(key)
@@ -402,8 +243,8 @@ class LabView(arcade.View):
 
 	def _start_new_day(self, message: str):
 		self.player.row, self.player.col = DEFAULT_X, DEFAULT_Y
-		self.player.target_x = self.player.center_x = _room_x(DEFAULT_Y)
-		self.player.target_y = self.player.center_y = _room_y(DEFAULT_X)
+		self.player.target_x = self.player.center_x = room_x(DEFAULT_Y)
+		self.player.target_y = self.player.center_y = room_y(DEFAULT_X)
 		self.player.moving = False
 
 		# Shipments sent the day before are paid out as the new day starts --
