@@ -34,8 +34,8 @@ BENCH_BOTTOM_ROW = BENCH_TOP_ROW - 2
 # centered on an N.5 column lines its edges up exactly with tile
 # boundaries (tiles N-1, N, N+1), the same way BENCH_TOP_ROW does for a
 # 1-tile-deep bench on a whole row.
-REACTION_COL = 5.5
-PURIFY_COL = 13.5
+REACTION_COL = 5
+PURIFY_COL = 13
 
 DOOR_MENU_OPTIONS = ["Leave for the day", "Stay in the lab", "Visit university", "Visit the city"]
 
@@ -191,7 +191,7 @@ class LabView(arcade.View):
 			# Additional benches here
 			{"name": "door_home", "x": _room_x(DOOR_COL), "y": _room_y(DOOR_ROW),
 				"width": TILE_SIZE, "height": TILE_SIZE,
-				"color": arcade.color.BLACK, "action": "go to the door",
+				"color": arcade.color.SADDLE_BROWN, "action": "go to the door",
 				"is_door": True},
 		]
 		self.near_bench = None
