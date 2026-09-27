@@ -131,8 +131,6 @@ class BenchView(arcade.View):
         self.message_color = arcade.color.BLACK
         self.message_timer = 0.0
 
-        arcade.set_background_color(arcade.color.LIGHT_GRAY)
-
         self.benches = arcade.SpriteList()
         self.benches.append(Bench(BENCH_CENTER_X, BENCH_CENTER_Y, color=bench_color))
 
@@ -146,6 +144,13 @@ class BenchView(arcade.View):
             arcade.color.DARK_GRAY, font_size=14, anchor_x="center")
         self.message_text = arcade.Text("", SCREEN_WIDTH / 2, MESSAGE_Y,
             arcade.color.BLACK, font_size=14, anchor_x="center")
+
+    def on_show_view(self):
+        # arcade.set_background_color() is global window state, not
+        # per-view -- set it here (rather than only once in __init__) so
+        # it's correct every time this bench is (re-)shown, regardless of
+        # which view was showing before it.
+        arcade.set_background_color(arcade.color.LIGHT_GRAY)
 
     # ---- status messages ----
 

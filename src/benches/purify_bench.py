@@ -11,6 +11,7 @@ import arcade
 
 from benches.ui_common import LIST_START_Y, BenchView, check_pass_out
 from devtools import logger
+from inventory import bench_for_equipment_type
 from purification import (
     PURIFY_METHOD_ORDER,
     PURIFY_SCALE_ORDER,
@@ -87,32 +88,35 @@ class PurifyBenchView(BenchView):
     # ---- method menu (Column Chromatography / Distillation) ----
 
     def _method_menu_options(self):
+        """(label, method_key) pairs for only the methods actually
+        runnable at this scale -- unlike the top-level scale menu, a
+        method you don't own the column for is left off the list
+        entirely rather than shown greyed out."""
         equipment = self.window.equipment_inventory
         options = []
         for method_key in PURIFY_METHOD_ORDER:
+            if not method_is_available(self.scale_key, method_key, equipment):
+                continue
             method = PURIFY_SCALES[self.scale_key].methods[method_key]
-            enabled = method_is_available(self.scale_key, method_key, equipment)
-            label = method.label if enabled else f"{method.label} (not available)"
-            options.append((label, enabled))
+            options.append((method.label, method_key))
         return options
 
     def draw_method_menu(self):
         self.draw_title(f"{PURIFY_SCALES[self.scale_key].label} Purification")
-        self.draw_centered_menu(self._method_menu_options())
-        self._draw_crude_summary(LIST_START_Y - len(self._method_menu_options()) * 40 - 20)
+        options = self._method_menu_options()
+        self.draw_centered_menu([(label, True) for label, _ in options])
+        self._draw_crude_summary(LIST_START_Y - len(options) * 40 - 20)
         self.draw_instructions("UP/DOWN to choose, ENTER to select, ESC to go back")
 
     def handle_method_keys(self, key):
         options = self._method_menu_options()
-        if key in (arcade.key.UP, arcade.key.W):
+        if key in (arcade.key.UP, arcade.key.W) and options:
             self.cursor_index = (self.cursor_index - 1) % len(options)
-        elif key in (arcade.key.DOWN, arcade.key.S):
+        elif key in (arcade.key.DOWN, arcade.key.S) and options:
             self.cursor_index = (self.cursor_index + 1) % len(options)
-        elif key == arcade.key.ENTER:
-            _, enabled = options[self.cursor_index]
-            if not enabled:
-                return
-            self.method_key = PURIFY_METHOD_ORDER[self.cursor_index]
+        elif key == arcade.key.ENTER and options:
+            _, method_key = options[self.cursor_index]
+            self.method_key = method_key
             self.mode = "pick_crude"
             self.reset_cursor()
         elif key == arcade.key.ESCAPE:
@@ -283,23 +287,32 @@ class PurifyBenchView(BenchView):
     # ---- supplies (read-only) ----
 
     def supplies_lines(self):
-        """Equipment and consumables shown here are never hardcoded -- both
-        come from the shared catalogs (src/data/equipment.json,
-        src/data/consumables.json), filtered to whatever's tagged for the
-        purify bench, so a new column/supply added there shows up
-        automatically."""
+        """Equipment listed here is only what's actually in your
+        inventory and tagged for the purify bench -- a column you don't
+        own doesn't show up at all (the catalog is only consulted to know
+        which bench an owned item belongs to). Consumables still come
+        from the shared catalog (src/data/consumables.json) so you can
+        see you're out of one."""
         equipment = self.window.equipment_inventory
         equipment_catalog = self.window.equipment_catalog
         consumables = self.window.consumables
         consumable_catalog = self.window.consumable_catalog
 
-        purify_types = {entry.type: entry.name for entry in equipment_catalog.values()
-                         if entry.bench == PURIFY_BENCH_TAG}
+        groups = {}  # equipment type -> {"name": str, "available": int, "total": int}
+        for item in equipment.items.values():
+            if bench_for_equipment_type(equipment_catalog, item.type) != PURIFY_BENCH_TAG:
+                continue
+            group = groups.setdefault(item.type, {"name": item.name, "available": 0, "total": 0})
+            group["total"] += 1
+            if not item.in_use:
+                group["available"] += 1
+
         lines = ["Equipment"]
-        for eq_type, label in sorted(purify_types.items(), key=lambda pair: pair[1]):
-            total = sum(1 for item in equipment.items.values() if item.type == eq_type)
-            available = len(equipment.available_items(eq_type))
-            lines.append(f"{label}: {available} available / {total} total")
+        if groups:
+            for group in sorted(groups.values(), key=lambda g: g["name"]):
+                lines.append(f"{group['name']}: {group['available']} available / {group['total']} total")
+        else:
+            lines.append("(none)")
 
         lines.append("")
         lines.append("Consumables")

@@ -215,8 +215,20 @@ def method_is_available(scale_key: str, method_key: str, equipment_inventory) ->
 def available_slider_values(scale_key: str, available_mass_g: float) -> list[float]:
     """Ascending notches (in grams) at or under available_mass_g -- the
     ones the player can actually pick given how much crude chemical is on
-    hand."""
-    return [v for v in PURIFY_SCALES[scale_key].slider_values_g if v <= available_mass_g + 1e-9]
+    hand. The top of the list is always exactly min(available_mass_g, the
+    scale's max notch) -- even when that doesn't land on one of the
+    scale's fixed notches -- so the player can always select everything
+    they have on hand (up to what the scale supports) rather than being
+    rounded down to the nearest notch below it."""
+    all_values = PURIFY_SCALES[scale_key].slider_values_g
+    if not all_values:
+        return []
+    cap = min(available_mass_g, all_values[-1])
+    if cap < all_values[0] - 1e-9:
+        return []  # not even enough for the smallest notch
+    values = [v for v in all_values if v <= cap - 1e-9]
+    values.append(round(cap, 6))
+    return values
 
 
 def purify(

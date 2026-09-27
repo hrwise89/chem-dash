@@ -109,9 +109,21 @@ class TestSliderValues(unittest.TestCase):
         self.assertIn(10.0, BENCH_SCALE.slider_values_g)
 
     def test_available_slider_values_caps_at_stock(self):
+        # The top of the list is exactly what's on hand (12.5), not rounded
+        # down to the nearest fixed notch (12.0) -- the player should
+        # always be able to select everything they have.
         values = available_slider_values("bench", 12.5)
-        self.assertEqual(values[-1], 12.0)
+        self.assertEqual(values[-1], 12.5)
+        self.assertIn(12.0, values)
         self.assertNotIn(14.0, values)
+
+    def test_available_slider_values_caps_at_scale_max_when_stock_exceeds_it(self):
+        values = available_slider_values("bench", 500.0)
+        self.assertEqual(values[-1], 100.0)  # bench scale's max notch
+
+    def test_available_slider_values_exact_notch_is_not_duplicated(self):
+        values = available_slider_values("bench", 20.0)
+        self.assertEqual(values.count(20.0), 1)
 
     def test_available_slider_values_empty_below_smallest_notch(self):
         self.assertEqual(available_slider_values("bench", 0.1), [])

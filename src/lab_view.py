@@ -127,7 +127,6 @@ class LabView(arcade.View):
 		self.timer_manager = window.timer_manager
 		self.day_manager = window.day_manager
 		self.message_log = window.message_log
-		arcade.set_background_color(OUTSIDE_ROOM_COLOR)
 		# Movement
 		self.keys_held = set()
 		self.move_speed = 0.3 / 1.15  # ~15% faster tile-to-tile movement than before
@@ -141,6 +140,14 @@ class LabView(arcade.View):
 
 		self.message_log.add("Use arrow keys to move player tile by tile")
 		self._last_near_bench_name = None
+
+	def on_show_view(self):
+		# arcade.set_background_color() is global window state, not
+		# per-view -- a bench view (BenchView.__init__) sets it to its own
+		# light gray, so it has to be reset back here every time the lab
+		# floor is (re-)shown, not just once at LabView construction, or
+		# the floor stays gray after coming back from a bench.
+		arcade.set_background_color(OUTSIDE_ROOM_COLOR)
 
 		# Status bar (top): time / date / money.
 		status_bar_y = SCREEN_HEIGHT - STATUS_BAR_HEIGHT / 2
