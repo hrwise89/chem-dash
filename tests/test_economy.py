@@ -136,28 +136,34 @@ class TestContractBoard(unittest.TestCase):
         self.wallet = Wallet(0.0)
 
     def test_offer_adds_to_available(self):
-        contract = self.board.offer("Test job", "ethyl bromide", 1.0, 20.0)
+        contract = self.board.offer("Test job", "Test Sender", "Test message", "ethyl bromide", 1.0, 20.0)
         self.assertIn(contract, self.board.available)
         self.assertIsInstance(contract, Contract)
         self.assertFalse(contract.requires_pure)
 
-    def test_display_name_falls_back_to_title_without_a_short_name(self):
-        contract = self.board.offer("Test job", "ethyl bromide", 1.0, 20.0)
+    def test_display_name_falls_back_to_subject_without_a_short_name(self):
+        contract = self.board.offer("Test job", "Test Sender", "Test message", "ethyl bromide", 1.0, 20.0)
         self.assertEqual(contract.display_name, "Test job")
 
     def test_display_name_prefers_short_name_when_set(self):
-        contract = self.board.offer("Test job", "ethyl bromide", 1.0, 20.0, short_name="EtBr Order")
+        contract = self.board.offer("Test job", "Test Sender", "Test message", "ethyl bromide", 1.0, 20.0,
+                                     short_name="EtBr Order")
         self.assertEqual(contract.display_name, "EtBr Order")
 
+    def test_order_type_defaults_to_synthesis_and_letter_is_its_first_char(self):
+        contract = self.board.offer("Test job", "Test Sender", "Test message", "ethyl bromide", 1.0, 20.0)
+        self.assertEqual(contract.order_type, "Synthesis")
+        self.assertEqual(contract.order_type_letter, "S")
+
     def test_accept_moves_from_available_to_accepted(self):
-        contract = self.board.offer("Test job", "ethyl bromide", 1.0, 20.0)
+        contract = self.board.offer("Test job", "Test Sender", "Test message", "ethyl bromide", 1.0, 20.0)
         accepted = self.board.accept(contract.contract_id)
         self.assertEqual(accepted, contract)
         self.assertNotIn(contract, self.board.available)
         self.assertIn(contract, self.board.accepted)
 
     def test_reject_discards_without_accepting(self):
-        contract = self.board.offer("Test job", "ethyl bromide", 1.0, 20.0)
+        contract = self.board.offer("Test job", "Test Sender", "Test message", "ethyl bromide", 1.0, 20.0)
         self.board.reject(contract.contract_id)
         self.assertNotIn(contract, self.board.available)
         self.assertNotIn(contract, self.board.accepted)
@@ -169,7 +175,7 @@ class TestContractBoard(unittest.TestCase):
     # --- Shipping (consumes product immediately, payment deferred) ---
 
     def test_ship_moves_to_in_transit_and_consumes_product_but_does_not_pay(self):
-        contract = self.board.offer("Test job", "ethyl bromide", 1.0, 20.0)
+        contract = self.board.offer("Test job", "Test Sender", "Test message", "ethyl bromide", 1.0, 20.0)
         self.board.accept(contract.contract_id)
         self.inventory.add_moles("ethyl bromide", 2.0)
 
@@ -181,7 +187,7 @@ class TestContractBoard(unittest.TestCase):
         self.assertAlmostEqual(self.inventory.moles_of("ethyl bromide"), 1.0, places=6)
 
     def test_ship_without_enough_product_raises_and_changes_nothing(self):
-        contract = self.board.offer("Test job", "ethyl bromide", 1.0, 20.0)
+        contract = self.board.offer("Test job", "Test Sender", "Test message", "ethyl bromide", 1.0, 20.0)
         self.board.accept(contract.contract_id)
         self.inventory.add_moles("ethyl bromide", 0.2)
 
@@ -191,12 +197,12 @@ class TestContractBoard(unittest.TestCase):
         self.assertAlmostEqual(self.inventory.moles_of("ethyl bromide"), 0.2, places=6)
 
     def test_ship_not_accepted_raises(self):
-        contract = self.board.offer("Test job", "ethyl bromide", 1.0, 20.0)
+        contract = self.board.offer("Test job", "Test Sender", "Test message", "ethyl bromide", 1.0, 20.0)
         with self.assertRaises(ValueError):
             self.board.ship(contract.contract_id, self.inventory)
 
     def test_crude_order_accepts_crude_product(self):
-        contract = self.board.offer("Crude order", "ethyl bromide", 1.0, 20.0, requires_pure=False)
+        contract = self.board.offer("Crude order", "Test Sender", "Test message", "ethyl bromide", 1.0, 20.0, requires_pure=False)
         self.board.accept(contract.contract_id)
         self.inventory.add_moles("ethyl bromide (crude)", 1.0)
 
@@ -204,7 +210,7 @@ class TestContractBoard(unittest.TestCase):
         self.assertAlmostEqual(self.inventory.moles_of("ethyl bromide (crude)"), 0.0, places=6)
 
     def test_crude_order_spends_crude_before_pure(self):
-        contract = self.board.offer("Crude order", "ethyl bromide", 1.0, 20.0, requires_pure=False)
+        contract = self.board.offer("Crude order", "Test Sender", "Test message", "ethyl bromide", 1.0, 20.0, requires_pure=False)
         self.board.accept(contract.contract_id)
         self.inventory.add_moles("ethyl bromide (crude)", 0.4)
         self.inventory.add_moles("ethyl bromide", 1.0)
@@ -215,7 +221,7 @@ class TestContractBoard(unittest.TestCase):
         self.assertAlmostEqual(self.inventory.moles_of("ethyl bromide"), 0.4, places=6)
 
     def test_pure_order_rejects_crude_only_stock(self):
-        contract = self.board.offer("Pure order", "ethyl bromide", 1.0, 20.0, requires_pure=True)
+        contract = self.board.offer("Pure order", "Test Sender", "Test message", "ethyl bromide", 1.0, 20.0, requires_pure=True)
         self.board.accept(contract.contract_id)
         self.inventory.add_moles("ethyl bromide (crude)", 5.0)  # plenty of crude, but it doesn't count
 
@@ -224,7 +230,7 @@ class TestContractBoard(unittest.TestCase):
         self.assertIn(contract, self.board.accepted)
 
     def test_pure_order_accepts_pure_stock(self):
-        contract = self.board.offer("Pure order", "ethyl bromide", 1.0, 20.0, requires_pure=True)
+        contract = self.board.offer("Pure order", "Test Sender", "Test message", "ethyl bromide", 1.0, 20.0, requires_pure=True)
         self.board.accept(contract.contract_id)
         self.inventory.add_moles("ethyl bromide", 1.0)
 
@@ -234,7 +240,7 @@ class TestContractBoard(unittest.TestCase):
     # --- Overnight payment ---
 
     def test_process_overnight_pays_and_moves_to_history(self):
-        contract = self.board.offer("Test job", "ethyl bromide", 1.0, 20.0)
+        contract = self.board.offer("Test job", "Test Sender", "Test message", "ethyl bromide", 1.0, 20.0)
         self.board.accept(contract.contract_id)
         self.inventory.add_moles("ethyl bromide", 1.0)
         self.board.ship(contract.contract_id, self.inventory)

@@ -108,6 +108,16 @@ class Contract:
     `product` (a reaction output the player can already make) for
     `reward` money.
 
+    `sender`/`subject`/`message` are the incoming-order framing (an
+    in-game email: who sent it, its subject line, its full body) --
+    `subject` is the short line a list row shows, `message` is the full
+    text a detail view shows in full rather than truncating.
+
+    `order_type` (e.g. "Synthesis", "Purification", "Analysis",
+    "Research") categorizes what kind of job this is -- every contract
+    today is "Synthesis"; `order_type_letter` is its single-letter list
+    indicator until sprites.py grows a per-type icon.
+
     `product` is always the substance's pure name (e.g. "ethyl bromide"),
     never the "(crude)" form -- `requires_pure` says whether the crude form
     is also acceptable:
@@ -118,16 +128,23 @@ class Contract:
         counts.
     """
     contract_id: str
-    title: str
+    subject: str
+    sender: str
+    message: str
     product: str
     amount: float
     reward: float
     requires_pure: bool = False
-    short_name: str | None = None   # what a fixed-width list row shows; None falls back to `title`
+    order_type: str = "Synthesis"
+    short_name: str | None = None   # what a fixed-width list row shows; None falls back to `subject`
 
     @property
     def display_name(self) -> str:
-        return self.short_name or self.title
+        return self.short_name or self.subject
+
+    @property
+    def order_type_letter(self) -> str:
+        return self.order_type[0].upper() if self.order_type else "?"
 
 
 class ContractBoard:
@@ -144,10 +161,11 @@ class ContractBoard:
         self.history: list[Contract] = []
         self._id_counter = itertools.count(1)
 
-    def offer(self, title: str, product: str, amount: float, reward: float,
-              requires_pure: bool = False, short_name: str | None = None) -> Contract:
-        contract = Contract(f"contract_{next(self._id_counter)}", title, product, amount, reward,
-                             requires_pure, short_name)
+    def offer(self, subject: str, sender: str, message: str, product: str, amount: float, reward: float,
+              requires_pure: bool = False, order_type: str = "Synthesis",
+              short_name: str | None = None) -> Contract:
+        contract = Contract(f"contract_{next(self._id_counter)}", subject, sender, message, product,
+                             amount, reward, requires_pure, order_type, short_name)
         self.available.append(contract)
         return contract
 
@@ -226,10 +244,12 @@ class ContractBoard:
 
 def load_contract_offers(board: ContractBoard, path: str) -> None:
     """Seed `board` with the starter contract offers from a JSON file of
-    {title: {product, amount, reward, requires_pure?, short_name?}} -- see
+    {order_id: {subject, sender, message, product, amount, reward,
+    requires_pure?, order_type?, short_name?}} -- see
     src/data/contracts.json."""
     with open(path, "r") as f:
         data = json.load(f)
-    for title, spec in data.items():
-        board.offer(title, spec["product"], spec["amount"], spec["reward"],
-                    spec.get("requires_pure", False), spec.get("short_name"))
+    for spec in data.values():
+        board.offer(spec["subject"], spec["sender"], spec["message"], spec["product"], spec["amount"],
+                    spec["reward"], spec.get("requires_pure", False), spec.get("order_type", "Synthesis"),
+                    spec.get("short_name"))

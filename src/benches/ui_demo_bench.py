@@ -36,9 +36,12 @@ ICON_SLOT_COUNT = 5
 LIST_PANEL = Panel(left=40, right=448, bottom=140, top=480)
 LIST_FONT_SIZE = 10
 LIST_ROW_HEIGHT = 20
-LIST_BOTTOM_MARGIN = 20  # keeps the last row clear of the panel border
+# The page indicator lives inside LIST_PANEL (not below/outside it), so
+# its own line's height is reserved here too -- trading a couple of rows
+# per page for not floating a page number outside the content area.
+LIST_BOTTOM_MARGIN = 36
 ROWS_PER_PAGE = int((LIST_PANEL.height - LIST_BOTTOM_MARGIN) // LIST_ROW_HEIGHT)
-PAGE_INDICATOR_Y = LIST_PANEL.bottom - 15
+PAGE_INDICATOR_Y = LIST_PANEL.bottom + 12
 
 
 class UIDemoBenchView(ThemedBenchView):

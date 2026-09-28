@@ -264,7 +264,7 @@ class LabView(arcade.View):
 		paid = self.window.contract_board.process_overnight(self.window.wallet)
 		if paid:
 			total = sum(c.reward for c in paid)
-			logger.info("Overnight payments: %s (total $%.2f)", [c.title for c in paid], total)
+			logger.info("Overnight payments: %s (total $%.2f)", [c.subject for c in paid], total)
 			message = f"{message} Payment received: ${total:.2f} ({len(paid)} order(s))."
 
 		# Autosave at each day boundary -- going home or passing out are

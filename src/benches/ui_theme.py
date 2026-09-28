@@ -233,6 +233,39 @@ def draw_fixed_list(panel: Panel, text_pool: TextPool, key_prefix: str, rows: li
         y -= row_height
 
 
+def draw_multiline_list(panel: Panel, text_pool: TextPool, key_prefix: str, entries: list[list[str]],
+                         cursor_index: int, entries_per_page: int, line_height: float, lines_per_entry: int,
+                         font_size: int = 12, left_margin: float = 10, cursor_gap: float = 8,
+                         cursor_glyph_width: float = 18, color=PANEL_COLOR, empty_label: str = "(none)"):
+    """Like draw_fixed_list, but each entry is `lines_per_entry` fixed,
+    non-wrapping lines (e.g. a task line, a sender line, a subject line)
+    instead of one -- CP437_CURSOR marks the whole entry, vertically
+    centered across its lines. text_pool is keyed by (slot, line) pairs,
+    same reuse-not-rebuild reasoning as draw_fixed_list."""
+    if not entries:
+        text_pool.get(f"{key_prefix}_empty", empty_label, panel.center_x, panel.center_y, color,
+                      font_size=font_size, font_name=FONT_STACK, anchor_x="center").draw()
+        return
+
+    text_x = panel.left + left_margin + cursor_glyph_width + cursor_gap
+    page_start = page_start_for_cursor(cursor_index, entries_per_page)
+    page_items = entries[page_start:page_start + entries_per_page]
+
+    y = panel.top - line_height
+    for slot, lines in enumerate(page_items):
+        item_index = page_start + slot
+        if item_index == cursor_index:
+            cursor_y = y - line_height * (lines_per_entry - 1) / 2
+            text_pool.get(f"{key_prefix}_cursor", CP437_CURSOR, panel.left + left_margin, cursor_y, color,
+                          font_size=font_size, font_name=FONT_STACK,
+                          anchor_x="left", anchor_y="center").draw()
+        for line_num, line in enumerate(lines):
+            text_pool.get(f"{key_prefix}_row_{slot}_{line_num}", line, text_x, y, color,
+                          font_size=font_size, font_name=FONT_STACK,
+                          anchor_x="left", anchor_y="center").draw()
+            y -= line_height
+
+
 # ---- Tab bar ----
 # A horizontal row of tab labels (the current one bright, the rest
 # dimmed), with optional big paging arrows flanking a panel below it.

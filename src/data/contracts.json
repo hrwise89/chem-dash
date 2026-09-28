@@ -1,33 +1,53 @@
 {
-  "Polymer lab needs ethyl bromide": {
+  "order_001": {
+    "sender": "Polymer Lab",
+    "subject": "Need ethyl bromide for polymer synthesis",
+    "message": "Our group is starting a new alkylation series this week and we're short on ethyl bromide. Could you supply 0.5 mol? Crude is fine -- we're distilling it ourselves before use. Payment on delivery, as usual.",
+    "order_type": "Synthesis",
     "product": "ethyl bromide",
     "requires_pure": false,
     "amount": 0.5,
     "reward": 40.0,
     "short_name": "EtBr Order"
   },
-  "Grad student needs pure ethyl cyanide": {
+  "order_002": {
+    "sender": "Chen (Grad Student)",
+    "subject": "Pure ethyl cyanide needed ASAP",
+    "message": "My qualifying exam project needs 0.3 mol of pure ethyl cyanide -- no crude, it has to be clean for the follow-up step. I know it's short notice, but I'd really appreciate it if you could get this out soon. Happy to pay a premium.",
+    "order_type": "Synthesis",
     "product": "ethyl cyanide",
     "requires_pure": true,
     "amount": 0.3,
     "reward": 55.0,
     "short_name": "EtCN Order (pure)"
   },
-  "Stockroom needs crude propionic acid": {
+  "order_003": {
+    "sender": "Stockroom",
+    "subject": "Restocking crude propionic acid",
+    "message": "Stockroom's running low on propionic acid again. We just need the crude form for general use -- 1.0 mol should hold us for a couple of weeks. Drop it off whenever you can get to it.",
+    "order_type": "Synthesis",
     "product": "propionic acid",
     "requires_pure": false,
     "amount": 1.0,
     "reward": 35.0,
     "short_name": "EtCOOH Order"
   },
-  "Flavor lab needs pure ethyl propionate": {
+  "order_004": {
+    "sender": "Flavor Lab",
+    "subject": "Pure ethyl propionate for tasting panel",
+    "message": "We're prepping samples for next week's tasting panel and need 0.4 mol of pure ethyl propionate -- any trace of the crude byproducts throws off the profile, so it has to be clean. Reward reflects the rush.",
+    "order_type": "Synthesis",
     "product": "ethyl propionate",
     "requires_pure": true,
     "amount": 0.4,
     "reward": 65.0,
     "short_name": "EtOPr Order (pure)"
   },
-  "Plastics workshop needs pure acetonitrile": {
+  "order_005": {
+    "sender": "Plastics Workshop",
+    "subject": "Pure acetonitrile for solvent trial",
+    "message": "We're running a solvent trial that calls for 0.6 mol of pure acetonitrile -- water content has to be as low as possible, so please make sure it's fully purified before shipping.",
+    "order_type": "Synthesis",
     "product": "acetonitrile",
     "requires_pure": true,
     "amount": 0.6,

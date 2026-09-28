@@ -93,7 +93,7 @@ class ComputerBenchView(BenchView):
 
     def _offer_label(self, contract) -> str:
         product_desc = f"pure {contract.product}" if contract.requires_pure else contract.product
-        return f"{contract.title} -- deliver {contract.amount:.2f} mol {product_desc} for ${contract.reward:.2f}"
+        return f"{contract.subject} -- deliver {contract.amount:.2f} mol {product_desc} for ${contract.reward:.2f}"
 
     # ---- drawing ----
 
@@ -192,7 +192,7 @@ class ComputerBenchView(BenchView):
             _, contract = items[self.cursor_index]
             self.window.contract_board.reject(contract.contract_id)
             self.reset_cursor()
-            self.show_message(f"Rejected: {contract.title}", arcade.color.DARK_YELLOW)
+            self.show_message(f"Rejected: {contract.subject}", arcade.color.DARK_YELLOW)
         elif key == arcade.key.ESCAPE:
             logger.debug("Computer bench: back from '%s'", self.mode)
             if self.mode.startswith("catalogue_"):
@@ -245,5 +245,5 @@ class ComputerBenchView(BenchView):
     def try_accept(self, contract):
         self.window.contract_board.accept(contract.contract_id)
         self.reset_cursor()
-        logger.info("Accepted contract '%s'", contract.title)
-        self.show_message(f"Accepted: {contract.title} -- check the notebook for open orders", arcade.color.DARK_GREEN)
+        logger.info("Accepted contract '%s'", contract.subject)
+        self.show_message(f"Accepted: {contract.subject} -- check the notebook for open orders", arcade.color.DARK_GREEN)
