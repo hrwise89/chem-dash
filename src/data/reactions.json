@@ -20,5 +20,49 @@
     "efficiency": 1.0,
     "equipment": ["rb_flask"],
     "reference_reagent": "ethyl bromide"
+  },
+  "ethyl cyanide + water → propionic acid": {
+    "reactants": {"ethyl cyanide": 1.0, "water": 2.0},
+    "products": {"propionic acid": 1.0},
+    "side_products": {"ammonia": 1.0},
+    "solvent": "water",
+    "temperature": 80.0,
+    "time_hours": 6.0,
+    "efficiency": 1.0,
+    "equipment": ["rb_flask"],
+    "reference_reagent": "ethyl cyanide"
+  },
+  "propionic acid + ethanol → ethyl propionate": {
+    "reactants": {"propionic acid": 1.0, "ethanol": 1.0},
+    "products": {"ethyl propionate": 1.0},
+    "side_products": {"water": 1.0},
+    "solvent": "neat",
+    "temperature": 78.0,
+    "time_hours": 5.0,
+    "efficiency": 1.0,
+    "equipment": ["rb_flask"],
+    "reference_reagent": "propionic acid"
+  },
+  "HBr + methanol → methyl bromide": {
+    "reactants": {"HBr": 1.0, "methanol": 1.0},
+    "products": {"methyl bromide": 1.0},
+    "side_products": {"water": 1.0},
+    "solvent": "neat",
+    "temperature": 20.0,
+    "time_hours": 3.0,
+    "efficiency": 1.0,
+    "equipment": ["rb_flask"],
+    "reference_reagent": "HBr"
+  },
+  "sodium cyanide + methyl bromide → acetonitrile": {
+    "reactants": {"sodium cyanide": 1.0, "methyl bromide": 1.0},
+    "products": {"acetonitrile": 1.0},
+    "side_products": {"sodium bromide": 1.0},
+    "solvent": "toluene",
+    "temperature": 40.0,
+    "time_hours": 3.5,
+    "efficiency": 1.0,
+    "equipment": ["rb_flask"],
+    "reference_reagent": "methyl bromide"
   }
 }

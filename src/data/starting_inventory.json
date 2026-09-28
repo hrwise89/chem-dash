@@ -2,7 +2,8 @@
   "chemicals": {
     "48% hydrobromic acid": 700.0,
     "ethanol": 350.0,
-    "sodium cyanide": 100.0
+    "sodium cyanide": 100.0,
+    "methanol": 250.0
   },
   "equipment": [
     {"type": "rb_flask", "name": "125 mL RB Flask", "capacity": 125.0},

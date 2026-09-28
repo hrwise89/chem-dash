@@ -34,10 +34,42 @@
     "state": "liquid",
     "molecular_weight": 18.02,
     "molarity": 55.49,
-    "density": 1.0
+    "density": 1.0,
+    "price_per_unit": 0.005
   },
   "sodium bromide": {
     "state": "solid",
     "molecular_weight": 102.89
+  },
+  "methanol": {
+    "state": "liquid",
+    "molecular_weight": 32.04,
+    "molarity": 24.72,
+    "density": 0.79,
+    "price_per_unit": 0.02
+  },
+  "methyl bromide": {
+    "state": "liquid",
+    "molecular_weight": 94.94,
+    "molarity": 17.69,
+    "density": 1.68
+  },
+  "acetonitrile": {
+    "state": "liquid",
+    "molecular_weight": 41.05,
+    "molarity": 19.15,
+    "density": 0.79
+  },
+  "propionic acid": {
+    "state": "liquid",
+    "molecular_weight": 74.08,
+    "molarity": 13.34,
+    "density": 0.99
+  },
+  "ethyl propionate": {
+    "state": "liquid",
+    "molecular_weight": 102.13,
+    "molarity": 8.72,
+    "density": 0.89
   }
 }
