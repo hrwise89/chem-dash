@@ -13,7 +13,7 @@ from day_manager import calendar_date_string, clock_time_string
 from door_menu import DoorMenu
 from player import Player
 from room_geometry import (
-	BENCH_BOTTOM_ROW, BENCH_TOP_ROW, DEFAULT_X, DEFAULT_Y, DOOR_COL, DOOR_ROW,
+	BENCH_BOTTOM_ROW, BENCH_TOP_ROW, DEFAULT_X, DEFAULT_Y, DEMO_COL, DEMO_ROW, DOOR_COL, DOOR_ROW,
 	PURIFY_COL, REACTION_COL, draw_door_marker, room_x, room_y, wall_sprites,
 )
 from save_game import save_game
@@ -88,6 +88,10 @@ class LabView(arcade.View):
 				"width": TILE_SIZE * 3, "height": TILE_SIZE,
 				"color": arcade.color.DARK_SLATE_BLUE, "action": "use the computer",
 				"opens": ComputerBenchView},
+			{"name": "bench_ui_demo_1", "x": room_x(DEMO_COL), "y": room_y(DEMO_ROW),
+				"width": TILE_SIZE * 3, "height": TILE_SIZE,
+				"color": arcade.color.MAGENTA, "action": "test the UI demo (dev)",
+				"opens": UIDemoBenchView},
 			# Additional benches here
 			{"name": "door_home", "x": room_x(DOOR_COL), "y": room_y(DOOR_ROW),
 				"width": TILE_SIZE, "height": TILE_SIZE,

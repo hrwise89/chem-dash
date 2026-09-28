@@ -34,6 +34,11 @@ BENCH_BOTTOM_ROW = BENCH_TOP_ROW - 2
 REACTION_COL = 5
 PURIFY_COL = 13
 
+# The (dev-only) UI demo bench sits another 2 tiles south of shipping --
+# the same spacing as reaction -> shipping -- under the reaction column.
+DEMO_ROW = BENCH_BOTTOM_ROW - 2
+DEMO_COL = REACTION_COL
+
 # The door's own activation tile is the same color as the wall (it IS a
 # chunk of the wall), so it'd otherwise be invisible -- this thin strip
 # just outside it marks where it actually is.

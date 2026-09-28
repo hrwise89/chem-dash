@@ -1,12 +1,12 @@
 """
 The retro-terminal chrome system: rounded panels, a drawn scrollbar, a
-horizontal tab bar with paging arrows, an amount slider that shows
-overflow past its usable range, and an icon-slot row/panel that pulls
-from the sprites.py manifest. Built against the "menu-mockups" design
-(rounded boxed panels, Perfect DOS VGA 437, real scrollbar/slider
-graphics instead of text) so every bench can draw through one shared set
-of primitives instead of hand-rolling `arcade.draw_lrbt_rectangle_*`
-calls -- see ui_demo_bench.py for a screen exercising all of them.
+horizontal tab bar with paging arrows, a min-to-max amount slider, and an
+icon-slot row/panel that pulls from the sprites.py manifest. Built against
+the "menu-mockups" design (rounded boxed panels, Perfect DOS VGA 437, real
+scrollbar/slider graphics instead of text) so every bench can draw through
+one shared set of primitives instead of hand-rolling
+`arcade.draw_lrbt_rectangle_*` calls -- see ui_demo_bench.py for a screen
+exercising all of them.
 
 Layout is plain data (Panel below), not baked into draw-call arithmetic,
 so moving/resizing a panel on any screen is editing four numbers in that
@@ -21,23 +21,41 @@ from devtools import logger
 from sprites import texture_for
 
 # ---- Font ----
-# The actual .ttf isn't in the repo yet -- THEME_FONT_NAME is the family
-# name it should register under once it is (verify against the file's own
-# metadata; a font's registered name doesn't always match its filename).
-# FONT_STACK is what every Text call should pass as font_name: arcade/
-# pyglet tries each entry in order and falls back to the next if a font
-# isn't loaded, so nothing breaks before the real font file exists.
+# THEME_FONT_NAME matches the .ttf's own registered family name (checked
+# via its name table -- not always the same as the filename). FONT_STACK
+# is what every Text call should pass as font_name: arcade/pyglet tries
+# each entry in order, so a screen still renders (just with a system
+# monospace) on a checkout that's missing assets/fonts/ for some reason.
 THEME_FONT_NAME = "Perfect DOS VGA 437"
 THEME_FONT_PATH = "assets/fonts/Perfect DOS VGA 437.ttf"
 FONT_STACK = (THEME_FONT_NAME, "courier new", "monospace")
+
+# Perfect DOS VGA 437 (see int10h.org) maps Unicode code points 0x00-0xFF
+# directly onto the ORIGINAL CP437 codepage bytes at that same numeric
+# position -- not onto their real Unicode meaning. That's documented,
+# intentional behavior for this specific font (a straight port of the DOS
+# VGA text-mode glyph table), not a bug -- but it means the "correct"
+# Unicode character for something like "»" (U+00BB) renders as the wrong
+# glyph in it, while chr(0xAF) (really MACRON in Unicode) renders as the
+# authentic pixel-perfect "»" this font was drawn with. These constants
+# name the ones this module/its callers use, so nothing has to rediscover
+# this quirk again -- they'll show a different (but still legible)
+# character if FONT_STACK ever falls back to a real Unicode font, which
+# is an acceptable trade for pixel-perfect glyphs once the real font
+# is loaded.
+CP437_CURSOR = chr(0xAF)       # »
+CP437_ARROW_LEFT = chr(0x11)   # ◄
+CP437_ARROW_RIGHT = chr(0x10)  # ►
+CP437_ARROW_UP = chr(0x1E)     # ▲
+CP437_ARROW_DOWN = chr(0x1F)   # ▼
 
 _font_load_attempted = False
 
 
 def ensure_theme_font_loaded():
     """Loads THEME_FONT_PATH once (call from main.py at startup) --
-    silently a no-op if the file isn't there yet, so FONT_STACK's fallback
-    entries carry the look until it is."""
+    silently a no-op if the file's missing, so FONT_STACK's fallback
+    entries carry the look instead."""
     global _font_load_attempted
     if _font_load_attempted:
         return
@@ -194,7 +212,10 @@ def draw_tab_bar(center_x: float, y: float, labels: list[str], current_index: in
                   active_color=HIGHLIGHT_COLOR, dim_color=DIM_COLOR):
     """`labels` drawn centered as a row around (center_x, y), spacing
     apart -- the tab at current_index in active_color, everything else
-    dimmed."""
+    dimmed. `spacing`'s default is just a starting point: Perfect DOS VGA
+    437's glyphs are noticeably wider than a typical sans font at the same
+    size, so a caller with longer labels (or more of them) should check
+    they don't overlap/run off-screen and pass a wider spacing if not."""
     start_x = center_x - spacing * (len(labels) - 1) / 2
     for i, label in enumerate(labels):
         color = active_color if i == current_index else dim_color
@@ -220,25 +241,27 @@ def draw_page_arrows(panel: Panel, color=PANEL_COLOR):
                                  right_x + half, y, color)
 
 
-# ---- Slider with overflow ----
-# The amount slider: a solid track from min to max, a handle at the
-# current value, and (when there's more on hand than the scale's max) a
-# dotted extension past the max end showing that there's more available
-# than this scale can use.
+# ---- Slider ----
+# A bar ranging from a fixed min endpoint to a fixed max endpoint (each
+# marked with a small square), filled solid from min up to the current
+# value and dotted the rest of the way to max -- the filled/dotted
+# boundary is what grows right or shrinks left as the value changes, never
+# the endpoints themselves.
 
-SLIDER_HANDLE_WIDTH = 6
-SLIDER_OVERFLOW_WIDTH = 80          # fixed decorative length, not to scale
-SLIDER_OVERFLOW_DASH_LENGTH = 6
-SLIDER_OVERFLOW_GAP_LENGTH = 6
+SLIDER_ENDPOINT_WIDTH = 6
+SLIDER_HANDLE_WIDTH = 4
+SLIDER_DASH_LENGTH = 6
+SLIDER_GAP_LENGTH = 6
 
 
-def draw_slider(center_x: float, y: float, width: float, height: float,
-                 fraction: float, has_overflow: bool = False,
-                 color=PANEL_COLOR, fill_color=arcade.color.ORANGE, handle_color=arcade.color.RED):
+def draw_slider(center_x: float, y: float, width: float, height: float, fraction: float,
+                 min_label: str | None = None, max_label: str | None = None,
+                 color=PANEL_COLOR, fill_color=arcade.color.ORANGE, handle_color=arcade.color.RED,
+                 label_font_size: int = 14):
     """`fraction` (0-1) is how far along [min, max] the current value
-    sits. `has_overflow` draws the dotted "more than max available"
-    extension past the right end -- callers decide that by comparing
-    their own available-vs-max amounts."""
+    sits -- 0 at the min endpoint, 1 at the max endpoint. min_label/
+    max_label, if given, are drawn just outside each endpoint (e.g.
+    "0.5 g" / "100 g")."""
     left = center_x - width / 2
     right = center_x + width / 2
     bottom = y - height / 2
@@ -249,19 +272,27 @@ def draw_slider(center_x: float, y: float, width: float, height: float,
     arcade.draw_lrbt_rectangle_outline(left, right, bottom, top, color, border_width=2)
     if fraction > 0:
         arcade.draw_lrbt_rectangle_filled(left, fill_x, bottom, top, fill_color)
-    arcade.draw_lrbt_rectangle_filled(fill_x - SLIDER_HANDLE_WIDTH / 2, fill_x + SLIDER_HANDLE_WIDTH / 2,
-                                       bottom - 6, top + 6, handle_color)
-
-    if has_overflow:
-        x = right
-        end_x = right + SLIDER_OVERFLOW_WIDTH
-        while x < end_x:
-            dash_end = min(x + SLIDER_OVERFLOW_DASH_LENGTH, end_x)
+    if fraction < 1:
+        x = fill_x
+        while x < right:
+            dash_end = min(x + SLIDER_DASH_LENGTH, right)
             arcade.draw_line(x, y, dash_end, y, color, 2)
-            x = dash_end + SLIDER_OVERFLOW_GAP_LENGTH
-        overflow_marker_half = SLIDER_HANDLE_WIDTH / 2
-        arcade.draw_lrbt_rectangle_filled(end_x - overflow_marker_half, end_x + overflow_marker_half,
-                                           bottom - 4, top + 4, color)
+            x = dash_end + SLIDER_GAP_LENGTH
+
+    endpoint_half = SLIDER_ENDPOINT_WIDTH / 2
+    arcade.draw_lrbt_rectangle_filled(left - endpoint_half, left + endpoint_half, bottom - 4, top + 4, color)
+    arcade.draw_lrbt_rectangle_filled(right - endpoint_half, right + endpoint_half, bottom - 4, top + 4, color)
+
+    handle_half = SLIDER_HANDLE_WIDTH / 2
+    arcade.draw_lrbt_rectangle_filled(fill_x - handle_half, fill_x + handle_half,
+                                       bottom - 8, top + 8, handle_color)
+
+    if min_label:
+        arcade.Text(min_label, left - 14, y, color, font_size=label_font_size,
+                    font_name=FONT_STACK, anchor_x="right", anchor_y="center").draw()
+    if max_label:
+        arcade.Text(max_label, right + 14, y, color, font_size=label_font_size,
+                    font_name=FONT_STACK, anchor_x="left", anchor_y="center").draw()
 
 
 # ---- Icon slots ----
