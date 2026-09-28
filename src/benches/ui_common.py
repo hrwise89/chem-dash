@@ -78,7 +78,8 @@ class TextPool:
         return t
 
 
-def wrap_to_width(text: str, max_width: float, font_size: int = 16) -> list[str]:
+def wrap_to_width(text: str, max_width: float, font_size: int = 16,
+                   font_name: str | tuple[str, ...] = ("calibri", "arial")) -> list[str]:
     """
     Word-wrap `text` into however many lines it takes to keep each one no
     wider than max_width pixels at font_size, using a scratch arcade.Text to
@@ -89,8 +90,13 @@ def wrap_to_width(text: str, max_width: float, font_size: int = 16) -> list[str]
     A single word wider than max_width on its own is kept whole rather than
     split mid-word -- rare (a very long chemical name at a narrow width) and
     a mid-word break reads worse than a slightly-too-wide line.
+
+    font_name matters here, not just cosmetically: a wider font (e.g.
+    ui_theme.py's Perfect DOS VGA 437) wraps at a different point than the
+    default, so pass whatever font_name the actual draw call will use or
+    this measures against the wrong glyph widths.
     """
-    probe = arcade.Text(text, 0, 0, arcade.color.BLACK, font_size=font_size)
+    probe = arcade.Text(text, 0, 0, arcade.color.BLACK, font_size=font_size, font_name=font_name)
     if probe.content_width <= max_width:
         return [text]
 
