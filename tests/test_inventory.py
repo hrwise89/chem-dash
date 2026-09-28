@@ -46,6 +46,15 @@ class TestChemicalSpecies(unittest.TestCase):
         self.assertAlmostEqual(species.moles_per_unit(), 1 / 49.01, places=6)
         self.assertEqual(species.unit_label(), "g")
 
+    def test_display_name_falls_back_to_name_without_a_short_name(self):
+        species = ChemicalSpecies(name="sodium cyanide", state="solid", molecular_weight=49.01)
+        self.assertEqual(species.display_name, "sodium cyanide")
+
+    def test_display_name_prefers_short_name_when_set(self):
+        species = ChemicalSpecies(name="sodium cyanide", state="solid", molecular_weight=49.01,
+                                   short_name="NaCN")
+        self.assertEqual(species.display_name, "NaCN")
+
     def test_liquid_moles_per_unit_uses_molarity(self):
         species = ChemicalSpecies(name="ethanol", state="liquid", molarity=17.13, density=1.0)
         self.assertAlmostEqual(species.moles_per_unit(), 17.13 / 1000, places=6)
@@ -385,6 +394,12 @@ class TestEquipmentCatalog(unittest.TestCase):
         flask_types = {entry.type for name, entry in catalog.items() if "RB Flask" in name}
         self.assertEqual(flask_types, {"rb_flask"})
 
+    def test_real_catalog_entries_have_a_short_name(self):
+        catalog = load_equipment_catalog(REAL_EQUIPMENT_CATALOG_PATH)
+        entry = catalog["RB Flask 250 mL"]
+        self.assertEqual(entry.short_name, "RBF 250mL")
+        self.assertEqual(entry.display_name, "RBF 250mL")
+
 
 class TestConsumableCatalog(unittest.TestCase):
 
@@ -399,6 +414,11 @@ class TestConsumableCatalog(unittest.TestCase):
         catalog = load_consumable_catalog(REAL_CONSUMABLES_CATALOG_PATH)
         for name in ("Bulk Solvent (Technical Grade, 95%)", "Bulk Solvent (Reagent Grade, 99%)"):
             self.assertEqual(set(catalog[name].bench), {"reaction", "purify"})
+
+    def test_real_catalog_entries_have_a_short_name(self):
+        catalog = load_consumable_catalog(REAL_CONSUMABLES_CATALOG_PATH)
+        self.assertEqual(catalog["Silica Gel"].display_name, "Silica Gel")
+        self.assertEqual(catalog["Bulk Solvent (Technical Grade, 95%)"].display_name, "Solvent 95%")
 
 
 if __name__ == "__main__":

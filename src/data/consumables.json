@@ -1,5 +1,5 @@
 {
-  "Bulk Solvent (Technical Grade, 95%)": {"bench": ["reaction", "purify"], "unit": "mL", "price": 0.03},
-  "Bulk Solvent (Reagent Grade, 99%)": {"bench": ["reaction", "purify"], "unit": "mL", "price": 0.08},
-  "Silica Gel": {"bench": ["purify"], "unit": "g", "price": 0.08}
+  "Bulk Solvent (Technical Grade, 95%)": {"bench": ["reaction", "purify"], "unit": "mL", "price": 0.03, "short_name": "Solvent 95%"},
+  "Bulk Solvent (Reagent Grade, 99%)": {"bench": ["reaction", "purify"], "unit": "mL", "price": 0.08, "short_name": "Solvent 99%"},
+  "Silica Gel": {"bench": ["purify"], "unit": "g", "price": 0.08, "short_name": "Silica Gel"}
 }

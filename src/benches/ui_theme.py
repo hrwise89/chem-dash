@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 import arcade
 
-from benches.ui_common import wrap_to_width
+from benches.ui_common import TextPool
 from devtools import logger
 from settings import SCREEN_WIDTH
 from sprites import texture_for
@@ -81,6 +81,12 @@ HIGHLIGHT_COLOR = arcade.color.WHITE
 
 PANEL_RADIUS = 16
 PANEL_BORDER_WIDTH = 2
+# arcade's draw_arc_* defaults to num_segments=128 -- way more tessellation
+# than a ~16px UI corner needs (that default is sized for large decorative
+# circles). Every rounded panel draws 4 of these, every frame, so this
+# alone was a real per-frame cost; 20 is visually indistinguishable at
+# this radius.
+ARC_SEGMENTS = 20
 
 
 @dataclass
@@ -130,7 +136,8 @@ def draw_rounded_rect_outline(panel: Panel, color=PANEL_COLOR, radius: float = P
         (right - radius, bottom + radius, 270, 360),  # bottom-right
     ]
     for cx, cy, start, end in corners:
-        arcade.draw_arc_outline(cx, cy, radius * 2, radius * 2, color, start, end, border_width)
+        arcade.draw_arc_outline(cx, cy, radius * 2, radius * 2, color, start, end, border_width,
+                                 num_segments=ARC_SEGMENTS)
 
 
 def draw_rounded_rect_filled(panel: Panel, color=PANEL_BG_COLOR, radius: float = PANEL_RADIUS):
@@ -147,7 +154,8 @@ def draw_rounded_rect_filled(panel: Panel, color=PANEL_BG_COLOR, radius: float =
         (right - radius, bottom + radius, 270, 360),
     ]
     for cx, cy, start, end in corners:
-        arcade.draw_arc_filled(cx, cy, radius * 2, radius * 2, color, start, end)
+        arcade.draw_arc_filled(cx, cy, radius * 2, radius * 2, color, start, end,
+                                num_segments=ARC_SEGMENTS)
 
 
 def draw_panel(panel: Panel, color=PANEL_COLOR, bg_color=PANEL_BG_COLOR,
@@ -158,106 +166,79 @@ def draw_panel(panel: Panel, color=PANEL_COLOR, bg_color=PANEL_BG_COLOR,
     draw_rounded_rect_outline(panel, color, radius, border_width)
 
 
-# ---- Scrollbar ----
-# A vertical arrow/track/thumb scrollbar, drawn along a panel's right
-# edge -- replaces the "X-Y of N" text indicator with the mockup's actual
-# scrollbar graphic.
+# ---- Fixed-row paged lists ----
+# Retro-RPG-style: rows are a fixed height, one item per row (no word
+# wrap, no variable-height entries), and a list longer than one page flips
+# by a whole page at a time instead of scrolling by arbitrary offsets --
+# simpler to reason about, and cheap to draw: which page a cursor is on,
+# and which items are on a given page, are both O(1)/O(rows_per_page)
+# arithmetic, never a per-frame text-measurement pass over the whole list.
 
-SCROLLBAR_WIDTH = 18
-SCROLLBAR_ARROW_HEIGHT = 14
-SCROLLBAR_MARGIN = 10
+def page_start_for_cursor(cursor_index: int, rows_per_page: int) -> int:
+    """The index of the first item on cursor_index's page."""
+    return (cursor_index // rows_per_page) * rows_per_page
 
 
-def draw_scrollbar(panel: Panel, total_items: int, visible_items: int, scroll_offset: int,
-                    color=PANEL_COLOR):
-    """Draws a scrollbar for a list of `total_items`, `visible_items` of
-    which are shown starting at `scroll_offset` -- a no-op if everything
-    already fits (nothing to scroll)."""
-    if total_items <= visible_items:
+def page_count(total_items: int, rows_per_page: int) -> int:
+    """How many pages `total_items` split into (at least 1, even for an
+    empty list, so "Page 1/1" is always a valid thing to show)."""
+    if total_items <= 0:
+        return 1
+    return -(-total_items // rows_per_page)  # ceil division
+
+
+def draw_page_indicator(text_pool: TextPool, key: str, center_x: float, y: float,
+                         cursor_index: int, total_items: int, rows_per_page: int,
+                         font_size: int = 10, color=DIM_COLOR):
+    """A plain "Page X/Y" label -- the paged-list equivalent of
+    draw_scrollbar, without needing a thumb-size/position computed from
+    variable row heights."""
+    current_page = cursor_index // rows_per_page + 1 if total_items > 0 else 1
+    total_pages = page_count(total_items, rows_per_page)
+    text_pool.get(key, f"Page {current_page}/{total_pages}", center_x, y, color,
+                  font_size=font_size, font_name=FONT_STACK, anchor_x="center").draw()
+
+
+def draw_fixed_list(panel: Panel, text_pool: TextPool, key_prefix: str, rows: list[str],
+                     cursor_index: int, rows_per_page: int, row_height: float,
+                     font_size: int = 12, left_margin: float = 10, cursor_gap: float = 8,
+                     cursor_glyph_width: float = 18, color=PANEL_COLOR,
+                     empty_label: str = "(none)"):
+    """One page (rows_per_page items starting at cursor_index's page) of
+    `rows` (already-short, single-line strings -- see inventory.py's/
+    economy.py's display_name), each a fixed-height row with CP437_CURSOR
+    marking cursor_index. text_pool is keyed by row SLOT (0..rows_per_page-1,
+    plus f"{key_prefix}_cursor"), not by item index, so paging or scrolling
+    through a long list only ever touches a handful of Text objects,
+    reused/mutated in place rather than rebuilt."""
+    if not rows:
+        text_pool.get(f"{key_prefix}_empty", empty_label, panel.center_x, panel.center_y, color,
+                      font_size=font_size, font_name=FONT_STACK, anchor_x="center").draw()
         return
 
-    x = panel.right - SCROLLBAR_MARGIN - SCROLLBAR_WIDTH / 2
-    top = panel.top - SCROLLBAR_MARGIN
-    bottom = panel.bottom + SCROLLBAR_MARGIN
-    track_top = top - SCROLLBAR_ARROW_HEIGHT
-    track_bottom = bottom + SCROLLBAR_ARROW_HEIGHT
-    track_height = track_top - track_bottom
+    text_x = panel.left + left_margin + cursor_glyph_width + cursor_gap
+    page_start = page_start_for_cursor(cursor_index, rows_per_page)
+    page_items = rows[page_start:page_start + rows_per_page]
 
-    # Up/down arrows
-    arrow_half = SCROLLBAR_WIDTH / 2
-    arcade.draw_triangle_filled(x - arrow_half, top - SCROLLBAR_ARROW_HEIGHT,
-                                 x + arrow_half, top - SCROLLBAR_ARROW_HEIGHT,
-                                 x, top, color)
-    arcade.draw_triangle_filled(x - arrow_half, bottom + SCROLLBAR_ARROW_HEIGHT,
-                                 x + arrow_half, bottom + SCROLLBAR_ARROW_HEIGHT,
-                                 x, bottom, color)
-
-    # Track
-    arcade.draw_line(x, track_top, x, track_bottom, color, 2)
-
-    # Thumb -- sized proportionally to how much of the list is visible,
-    # positioned proportionally to scroll_offset.
-    thumb_height = max(track_height * (visible_items / total_items), SCROLLBAR_WIDTH)
-    max_scroll = total_items - visible_items
-    scroll_fraction = 0.0 if max_scroll <= 0 else scroll_offset / max_scroll
-    thumb_top = track_top - (track_height - thumb_height) * scroll_fraction
-    thumb_bottom = thumb_top - thumb_height
-    arcade.draw_lrbt_rectangle_filled(x - arrow_half, x + arrow_half, thumb_bottom, thumb_top, color)
-
-
-# ---- Wrap-aware list scrolling ----
-# A word-wrapped list item can take more than one visual row, so "how many
-# items are visible" and "when should the cursor force a scroll" can't be
-# a flat row-count-equals-item-count assumption -- these compute both in
-# terms of actual rendered rows, given each item's wrapped row count (see
-# wrapped_item_rows). Panel-agnostic on purpose: callers own drawing.
-
-def wrapped_item_rows(items: list[str], max_text_width: float, font_size: int) -> list[int]:
-    """How many lines each of `items` takes once word-wrapped to
-    max_text_width at font_size (in FONT_STACK) -- index-aligned with
-    `items`."""
-    return [len(wrap_to_width(item, max_text_width, font_size=font_size, font_name=FONT_STACK))
-            for item in items]
-
-
-def visible_item_count(row_counts: list[int], start_index: int, max_rows: int) -> int:
-    """How many items starting at start_index fit within max_rows rendered
-    rows, given each item's row count (see wrapped_item_rows). Always at
-    least 1 once start_index is in range, even if that one item's own row
-    count exceeds max_rows -- it still "fits" the same way it would
-    un-scrolled, just overflowing the panel."""
-    rows_used = 0
-    count = 0
-    for rows in row_counts[start_index:]:
-        if count > 0 and rows_used + rows > max_rows:
-            break
-        rows_used += rows
-        count += 1
-        if rows_used >= max_rows:
-            break
-    return count
-
-
-def scroll_offset_for_cursor(row_counts: list[int], cursor_index: int, scroll_offset: int,
-                              max_rows: int) -> int:
-    """The scroll_offset (an item index) that keeps cursor_index fully
-    within max_rows rendered rows -- scrolls forward one item at a time
-    (matching visible_item_count's own item-at-a-time accounting) rather
-    than jumping straight to the cursor, so the list scrolls the same way
-    regardless of how the wrapped rows above it happen to add up."""
-    if cursor_index < scroll_offset:
-        return cursor_index
-    while cursor_index >= scroll_offset + visible_item_count(row_counts, scroll_offset, max_rows):
-        scroll_offset += 1
-    return scroll_offset
+    y = panel.top - row_height
+    for slot, label in enumerate(page_items):
+        item_index = page_start + slot
+        if item_index == cursor_index:
+            text_pool.get(f"{key_prefix}_cursor", CP437_CURSOR, panel.left + left_margin, y, color,
+                          font_size=font_size, font_name=FONT_STACK,
+                          anchor_x="left", anchor_y="center").draw()
+        text_pool.get(f"{key_prefix}_row_{slot}", label, text_x, y, color,
+                      font_size=font_size, font_name=FONT_STACK,
+                      anchor_x="left", anchor_y="center").draw()
+        y -= row_height
 
 
 # ---- Tab bar ----
 # A horizontal row of tab labels (the current one bright, the rest
 # dimmed), with optional big paging arrows flanking a panel below it.
 
-def draw_tab_bar(center_x: float, y: float, labels: list[str], current_index: int,
-                  spacing: float = 220, font_size: int = 18,
+def draw_tab_bar(text_pool: TextPool, key_prefix: str, center_x: float, y: float,
+                  labels: list[str], current_index: int, spacing: float = 220, font_size: int = 18,
                   active_color=HIGHLIGHT_COLOR, dim_color=DIM_COLOR):
     """`labels` drawn centered as a row around (center_x, y), spacing
     apart -- the tab at current_index in active_color, everything else
@@ -268,8 +249,9 @@ def draw_tab_bar(center_x: float, y: float, labels: list[str], current_index: in
     start_x = center_x - spacing * (len(labels) - 1) / 2
     for i, label in enumerate(labels):
         color = active_color if i == current_index else dim_color
-        arcade.Text(label, start_x + i * spacing, y, color, font_size=font_size,
-                    font_name=FONT_STACK, anchor_x="center", anchor_y="center").draw()
+        text_pool.get(f"{key_prefix}_{i}", label, start_x + i * spacing, y, color,
+                      font_size=font_size, font_name=FONT_STACK,
+                      anchor_x="center", anchor_y="center").draw()
 
 
 PAGE_ARROW_SIZE = 24
@@ -303,7 +285,8 @@ SLIDER_DASH_LENGTH = 6
 SLIDER_GAP_LENGTH = 6
 
 
-def draw_slider(center_x: float, y: float, width: float, height: float, fraction: float,
+def draw_slider(text_pool: TextPool, key_prefix: str, center_x: float, y: float,
+                 width: float, height: float, fraction: float,
                  min_label: str | None = None, max_label: str | None = None,
                  color=PANEL_COLOR, fill_color=arcade.color.ORANGE, handle_color=arcade.color.RED,
                  label_font_size: int = 14):
@@ -337,11 +320,11 @@ def draw_slider(center_x: float, y: float, width: float, height: float, fraction
                                        bottom - 8, top + 8, handle_color)
 
     if min_label:
-        arcade.Text(min_label, left - 14, y, color, font_size=label_font_size,
-                    font_name=FONT_STACK, anchor_x="right", anchor_y="center").draw()
+        text_pool.get(f"{key_prefix}_min", min_label, left - 14, y, color, font_size=label_font_size,
+                      font_name=FONT_STACK, anchor_x="right", anchor_y="center").draw()
     if max_label:
-        arcade.Text(max_label, right + 14, y, color, font_size=label_font_size,
-                    font_name=FONT_STACK, anchor_x="left", anchor_y="center").draw()
+        text_pool.get(f"{key_prefix}_max", max_label, right + 14, y, color, font_size=label_font_size,
+                      font_name=FONT_STACK, anchor_x="left", anchor_y="center").draw()
 
 
 # ---- Icon slots ----
@@ -384,8 +367,8 @@ def draw_icon_slot_row(panel: Panel, count: int, sprite_key_for=lambda i: None,
 
 # ---- Decorative icon panel ----
 
-def draw_icon_panel(panel: Panel, sprite_key: str, placeholder_label: str = "",
-                     color=PANEL_COLOR, placeholder_font_size: int = 11):
+def draw_icon_panel(panel: Panel, sprite_key: str, text_pool: TextPool, key: str,
+                     placeholder_label: str = "", color=PANEL_COLOR, placeholder_font_size: int = 11):
     """A rounded panel showing sprites.py's texture for `sprite_key` if
     one exists, scaled to fit -- otherwise just the panel's outline (and
     placeholder_label, if given) so it's obvious in dev that no image is
@@ -400,9 +383,9 @@ def draw_icon_panel(panel: Panel, sprite_key: str, placeholder_label: str = "",
         sprite.height = max_size
         sprite.draw()
     elif placeholder_label:
-        arcade.Text(placeholder_label, panel.center_x, panel.center_y, DIM_COLOR,
-                    font_size=placeholder_font_size, font_name=FONT_STACK,
-                    anchor_x="center", anchor_y="center").draw()
+        text_pool.get(key, placeholder_label, panel.center_x, panel.center_y, DIM_COLOR,
+                      font_size=placeholder_font_size, font_name=FONT_STACK,
+                      anchor_x="center", anchor_y="center").draw()
 
 
 # ---- Themed bench base ----
@@ -419,12 +402,17 @@ INSTRUCTIONS_Y = 25
 MESSAGE_DURATION = 3.5
 
 
+MESSAGE_FONT_SIZE = 11
+MESSAGE_MAX_WIDTH = SCREEN_WIDTH - 80
+
+
 class ThemedBenchView(arcade.View):
 
     def __init__(self, window, lab_view):
         super().__init__()
         self.window = window
         self.lab_view = lab_view
+        self.text_pool = TextPool()
         self.message = ""
         self.message_color = PANEL_COLOR
         self.message_timer = 0.0
@@ -443,36 +431,36 @@ class ThemedBenchView(arcade.View):
                 self.message = ""
 
     def show_message(self, text: str, color=PANEL_COLOR, duration: float = MESSAGE_DURATION):
-        self.message = text
+        """Truncates `text` to one line, once, right here -- a message is
+        set rarely (a handful of times per bench visit) but drawn every
+        frame it's showing, so this is where the (one-time) cost of
+        fitting it belongs, not in draw_message()."""
+        probe = self.text_pool.get("message", text, 0, 0, color,
+                                    font_size=MESSAGE_FONT_SIZE, font_name=FONT_STACK)
+        while probe.content_width > MESSAGE_MAX_WIDTH and len(text) > 1:
+            text = text[:-1]
+            probe.text = text + "..."
+        self.message = probe.text
         self.message_color = color
         self.message_timer = duration
 
     def draw_status_bar(self, time_str: str, money_str: str, date_str: str):
         draw_panel(STATUS_PANEL, radius=STATUS_PANEL.height / 2)
-        arcade.Text(time_str, STATUS_PANEL.left + 30, STATUS_PANEL.center_y, PANEL_COLOR,
-                    font_size=14, font_name=FONT_STACK, anchor_x="left", anchor_y="center").draw()
-        arcade.Text(money_str, STATUS_PANEL.center_x, STATUS_PANEL.center_y, PANEL_COLOR,
-                    font_size=14, font_name=FONT_STACK, anchor_x="center", anchor_y="center").draw()
-        arcade.Text(date_str, STATUS_PANEL.right - 30, STATUS_PANEL.center_y, PANEL_COLOR,
-                    font_size=14, font_name=FONT_STACK, anchor_x="right", anchor_y="center").draw()
+        self.text_pool.get("status_time", time_str, STATUS_PANEL.left + 30, STATUS_PANEL.center_y,
+                            PANEL_COLOR, font_size=14, font_name=FONT_STACK,
+                            anchor_x="left", anchor_y="center").draw()
+        self.text_pool.get("status_money", money_str, STATUS_PANEL.center_x, STATUS_PANEL.center_y,
+                            PANEL_COLOR, font_size=14, font_name=FONT_STACK,
+                            anchor_x="center", anchor_y="center").draw()
+        self.text_pool.get("status_date", date_str, STATUS_PANEL.right - 30, STATUS_PANEL.center_y,
+                            PANEL_COLOR, font_size=14, font_name=FONT_STACK,
+                            anchor_x="right", anchor_y="center").draw()
 
-    def draw_message(self, font_size: int = 11, max_width: float = SCREEN_WIDTH - 80):
-        """Unlike draw_instructions's fixed text, a status message is
-        built from live data (a contract title, an amount) with no fixed
-        length to just shorten -- so this wraps instead, stacking extra
-        lines upward from MESSAGE_Y (away from the instructions line
-        below it, not into it)."""
+    def draw_message(self):
         if not self.message:
             return
-        lines = wrap_to_width(self.message, max_width, font_size=font_size, font_name=FONT_STACK)
-        line_height = font_size + 6
-        # The last line sits at MESSAGE_Y (closest to, but never
-        # overlapping, the instructions line below it); earlier lines
-        # stack upward above it, keeping normal top-to-bottom reading order.
-        for i, line in enumerate(lines):
-            y = MESSAGE_Y + (len(lines) - 1 - i) * line_height
-            arcade.Text(line, SCREEN_WIDTH / 2, y, self.message_color,
-                        font_size=font_size, font_name=FONT_STACK, anchor_x="center").draw()
+        self.text_pool.get("message", self.message, SCREEN_WIDTH / 2, MESSAGE_Y, self.message_color,
+                            font_size=MESSAGE_FONT_SIZE, font_name=FONT_STACK, anchor_x="center").draw()
 
     def draw_instructions(self, text: str, font_size: int = 10):
         """Perfect DOS VGA 437's glyphs are wide enough that a full
@@ -480,5 +468,5 @@ class ThemedBenchView(arcade.View):
         -style line easily runs off both edges of an 800px-wide screen
         even at a small font_size -- keep this short, or check its
         content_width against SCREEN_WIDTH before shipping it."""
-        arcade.Text(text, SCREEN_WIDTH / 2, INSTRUCTIONS_Y, DIM_COLOR,
-                    font_size=font_size, font_name=FONT_STACK, anchor_x="center").draw()
+        self.text_pool.get("instructions", text, SCREEN_WIDTH / 2, INSTRUCTIONS_Y, DIM_COLOR,
+                            font_size=font_size, font_name=FONT_STACK, anchor_x="center").draw()

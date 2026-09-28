@@ -64,7 +64,8 @@ class TextPool:
         self._pool: dict[object, arcade.Text] = {}
 
     def get(self, key, text: str, x: float, y: float, color,
-            font_size: int = 16, anchor_x: str = "left") -> arcade.Text:
+            font_size: int = 16, anchor_x: str = "left", anchor_y: str = "baseline",
+            font_name: str | tuple[str, ...] = ("calibri", "arial")) -> arcade.Text:
         t = self._pool.get(key)
         if t is None:
             t = arcade.Text("", 0, 0, arcade.color.BLACK, anchor_x="left")
@@ -75,6 +76,8 @@ class TextPool:
         t.color = color
         t.font_size = font_size
         t.anchor_x = anchor_x
+        t.anchor_y = anchor_y
+        t.font_name = font_name
         return t
 
 

@@ -112,6 +112,12 @@ class ChemicalSpecies:
                                              # computer bench's catalogue; None means
                                              # it isn't sold there (e.g. a product
                                              # the player makes rather than buys)
+    short_name: str | None = None           # e.g. "EtOH" -- what a fixed-width list
+                                             # row shows; None falls back to `name`
+
+    @property
+    def display_name(self) -> str:
+        return self.short_name or self.name
 
     def __post_init__(self):
         if self.state == "solid" and not self.molecular_weight:
@@ -312,6 +318,11 @@ class ConsumableCatalogEntry:
     bench: list[str]                # e.g. ["reaction", "purify"]
     price: float | None = None      # $ per native unit, for the computer bench's catalogue
     unit: str = "unit"
+    short_name: str | None = None   # what a fixed-width list row shows; None falls back to `name`
+
+    @property
+    def display_name(self) -> str:
+        return self.short_name or self.name
 
 
 def load_consumable_catalog(path: str) -> dict[str, ConsumableCatalogEntry]:
@@ -466,6 +477,11 @@ class EquipmentCatalogEntry:
     bench: str                      # "reaction" | "purify"
     price: float | None = None      # $, for the computer bench's catalogue
     capacity: float | None = None
+    short_name: str | None = None   # what a fixed-width list row shows; None falls back to `name`
+
+    @property
+    def display_name(self) -> str:
+        return self.short_name or self.name
 
 
 def load_equipment_catalog(path: str) -> dict[str, EquipmentCatalogEntry]:

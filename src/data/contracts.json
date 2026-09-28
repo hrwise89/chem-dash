@@ -3,30 +3,35 @@
     "product": "ethyl bromide",
     "requires_pure": false,
     "amount": 0.5,
-    "reward": 40.0
+    "reward": 40.0,
+    "short_name": "EtBr Order"
   },
   "Grad student needs pure ethyl cyanide": {
     "product": "ethyl cyanide",
     "requires_pure": true,
     "amount": 0.3,
-    "reward": 55.0
+    "reward": 55.0,
+    "short_name": "EtCN Order (pure)"
   },
   "Stockroom needs crude propionic acid": {
     "product": "propionic acid",
     "requires_pure": false,
     "amount": 1.0,
-    "reward": 35.0
+    "reward": 35.0,
+    "short_name": "EtCOOH Order"
   },
   "Flavor lab needs pure ethyl propionate": {
     "product": "ethyl propionate",
     "requires_pure": true,
     "amount": 0.4,
-    "reward": 65.0
+    "reward": 65.0,
+    "short_name": "EtOPr Order (pure)"
   },
   "Plastics workshop needs pure acetonitrile": {
     "product": "acetonitrile",
     "requires_pure": true,
     "amount": 0.6,
-    "reward": 50.0
+    "reward": 50.0,
+    "short_name": "MeCN Order (pure)"
   }
 }

@@ -4,72 +4,84 @@
     "solute": "HBr",
     "solvent": "water",
     "molarity": 8.8,
-    "price_per_unit": 0.12
+    "price_per_unit": 0.12,
+    "short_name": "HBr (aq)"
   },
   "ethanol": {
     "state": "liquid",
     "molecular_weight": 46.07,
     "molarity": 17.13,
     "density": 0.79,
-    "price_per_unit": 0.03
+    "price_per_unit": 0.03,
+    "short_name": "EtOH"
   },
   "sodium cyanide": {
     "state": "solid",
     "molecular_weight": 49.01,
-    "price_per_unit": 0.25
+    "price_per_unit": 0.25,
+    "short_name": "NaCN"
   },
   "ethyl bromide": {
     "state": "liquid",
     "molecular_weight": 108.97,
     "molarity": 13.4,
-    "density": 1.46
+    "density": 1.46,
+    "short_name": "EtBr"
   },
   "ethyl cyanide": {
     "state": "liquid",
     "molecular_weight": 55.08,
     "molarity": 14.47,
-    "density": 0.77
+    "density": 0.77,
+    "short_name": "EtCN"
   },
   "water": {
     "state": "liquid",
     "molecular_weight": 18.02,
     "molarity": 55.49,
     "density": 1.0,
-    "price_per_unit": 0.005
+    "price_per_unit": 0.005,
+    "short_name": "H2O"
   },
   "sodium bromide": {
     "state": "solid",
-    "molecular_weight": 102.89
+    "molecular_weight": 102.89,
+    "short_name": "NaBr"
   },
   "methanol": {
     "state": "liquid",
     "molecular_weight": 32.04,
     "molarity": 24.72,
     "density": 0.79,
-    "price_per_unit": 0.02
+    "price_per_unit": 0.02,
+    "short_name": "MeOH"
   },
   "methyl bromide": {
     "state": "liquid",
     "molecular_weight": 94.94,
     "molarity": 17.69,
-    "density": 1.68
+    "density": 1.68,
+    "short_name": "MeBr"
   },
   "acetonitrile": {
     "state": "liquid",
     "molecular_weight": 41.05,
     "molarity": 19.15,
-    "density": 0.79
+    "density": 0.79,
+    "short_name": "MeCN"
   },
   "propionic acid": {
     "state": "liquid",
     "molecular_weight": 74.08,
     "molarity": 13.34,
-    "density": 0.99
+    "density": 0.99,
+    "short_name": "EtCOOH"
   },
   "ethyl propionate": {
     "state": "liquid",
     "molecular_weight": 102.13,
     "molarity": 8.72,
-    "density": 0.89
+    "density": 0.89,
+    "short_name": "EtOPr"
   }
 }

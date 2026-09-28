@@ -141,6 +141,14 @@ class TestContractBoard(unittest.TestCase):
         self.assertIsInstance(contract, Contract)
         self.assertFalse(contract.requires_pure)
 
+    def test_display_name_falls_back_to_title_without_a_short_name(self):
+        contract = self.board.offer("Test job", "ethyl bromide", 1.0, 20.0)
+        self.assertEqual(contract.display_name, "Test job")
+
+    def test_display_name_prefers_short_name_when_set(self):
+        contract = self.board.offer("Test job", "ethyl bromide", 1.0, 20.0, short_name="EtBr Order")
+        self.assertEqual(contract.display_name, "EtBr Order")
+
     def test_accept_moves_from_available_to_accepted(self):
         contract = self.board.offer("Test job", "ethyl bromide", 1.0, 20.0)
         accepted = self.board.accept(contract.contract_id)
@@ -252,6 +260,7 @@ class TestLoadContractOffers(unittest.TestCase):
             self.assertTrue(contract.product)
             self.assertGreater(contract.amount, 0)
             self.assertGreater(contract.reward, 0)
+            self.assertTrue(contract.display_name)  # every starter contract has a short_name
 
 
 if __name__ == "__main__":
