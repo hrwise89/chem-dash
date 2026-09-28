@@ -107,7 +107,7 @@ class TestBuildAndApplySaveData(unittest.TestCase):
         self.assertEqual(fresh.contract_board.accepted[0].subject, contract.subject)
 
         # A fresh offer after loading must not collide with a restored id.
-        new_contract = fresh.contract_board.offer("New job", "Test Sender", "Test message", "ethanol", 1.0, 10.0)
+        new_contract = fresh.contract_board.offer("New job", "Test Sender", "Test message", "ethanol", "EtOH", 1.0, 10.0)
         self.assertNotEqual(new_contract.contract_id, contract.contract_id)
 
     def test_round_trips_an_in_progress_reaction(self):

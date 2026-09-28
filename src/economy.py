@@ -119,22 +119,34 @@ class Contract:
     indicator until sprites.py grows a per-type icon.
 
     `product` is always the substance's pure name (e.g. "ethyl bromide"),
-    never the "(crude)" form -- `requires_pure` says whether the crude form
-    is also acceptable:
-      - requires_pure=False ("orders for crude product"): either the crude
-        or the pure form counts, crude spent first (see
+    never the "(crude)" form -- `requires_purity` says whether the crude
+    form is also acceptable:
+      - requires_purity=False ("orders for crude product"): either the
+        crude or the pure form counts, crude spent first (see
         ContractBoard.ship) so pure stock is saved for orders that need it.
-      - requires_pure=True ("orders for pure product"): only the pure form
-        counts.
+      - requires_purity=True ("orders for pure product"): only the pure
+        form counts.
+
+    `purity` is a target percentage (e.g. 95.0) alongside requires_purity
+    -- a placeholder for a future "not just pure, but *this* pure" check;
+    nothing reads it yet, so any value is a no-op today.
+
+    `product_short_name` is the compact chemical name a fixed-width list
+    row shows (e.g. "EtBr" for "ethyl bromide") -- separate from
+    `short_name`, which is the whole *order's* compact label as shown by
+    other benches (computer bench's offer list, the reaction bench
+    notebook), not just the chemical.
     """
     contract_id: str
     subject: str
     sender: str
     message: str
     product: str
+    product_short_name: str
     amount: float
     reward: float
-    requires_pure: bool = False
+    requires_purity: bool = False
+    purity: float = 100.0
     order_type: str = "Synthesis"
     short_name: str | None = None   # what a fixed-width list row shows; None falls back to `subject`
 
@@ -150,7 +162,7 @@ class Contract:
 class ContractBoard:
     """Tracks a contract through available -> accepted -> in_transit ->
     history. Shipping consumes the product from inventory immediately
-    (crude/pure rules per Contract.requires_pure); payment is deferred
+    (crude/pure rules per Contract.requires_purity); payment is deferred
     until process_overnight() runs (see the shipping bench / day-start
     hook), giving a one-day delay between fulfillment and payment."""
 
@@ -161,11 +173,12 @@ class ContractBoard:
         self.history: list[Contract] = []
         self._id_counter = itertools.count(1)
 
-    def offer(self, subject: str, sender: str, message: str, product: str, amount: float, reward: float,
-              requires_pure: bool = False, order_type: str = "Synthesis",
-              short_name: str | None = None) -> Contract:
+    def offer(self, subject: str, sender: str, message: str, product: str, product_short_name: str,
+              amount: float, reward: float, requires_purity: bool = False, purity: float = 100.0,
+              order_type: str = "Synthesis", short_name: str | None = None) -> Contract:
         contract = Contract(f"contract_{next(self._id_counter)}", subject, sender, message, product,
-                             amount, reward, requires_pure, order_type, short_name)
+                             product_short_name, amount, reward, requires_purity, purity, order_type,
+                             short_name)
         self.available.append(contract)
         return contract
 
@@ -179,10 +192,10 @@ class ContractBoard:
 
     def available_product_moles(self, contract: Contract, inventory: ChemicalInventory) -> float:
         """How much of `contract`'s product is currently on hand and
-        eligible to ship -- just the pure form if requires_pure, otherwise
-        pure + crude combined."""
+        eligible to ship -- just the pure form if requires_purity,
+        otherwise pure + crude combined."""
         moles = inventory.moles_of(contract.product)
-        if not contract.requires_pure:
+        if not contract.requires_purity:
             moles += inventory.moles_of(crude_name_for(contract.product))
         return moles
 
@@ -207,7 +220,7 @@ class ContractBoard:
             )
 
         remaining = contract.amount
-        if not contract.requires_pure:
+        if not contract.requires_purity:
             crude_name = crude_name_for(contract.product)
             use_crude = min(inventory.moles_of(crude_name), remaining)
             if use_crude > 1e-9:
@@ -244,12 +257,13 @@ class ContractBoard:
 
 def load_contract_offers(board: ContractBoard, path: str) -> None:
     """Seed `board` with the starter contract offers from a JSON file of
-    {order_id: {subject, sender, message, product, amount, reward,
-    requires_pure?, order_type?, short_name?}} -- see
-    src/data/contracts.json."""
+    {order_id: {subject, sender, message, product, product_short_name,
+    amount, reward, requires_purity?, purity?, order_type?, short_name?}}
+    -- see src/data/contracts.json."""
     with open(path, "r") as f:
         data = json.load(f)
     for spec in data.values():
-        board.offer(spec["subject"], spec["sender"], spec["message"], spec["product"], spec["amount"],
-                    spec["reward"], spec.get("requires_pure", False), spec.get("order_type", "Synthesis"),
-                    spec.get("short_name"))
+        board.offer(spec["subject"], spec["sender"], spec["message"], spec["product"],
+                    spec["product_short_name"], spec["amount"], spec["reward"],
+                    spec.get("requires_purity", False), spec.get("purity", 100.0),
+                    spec.get("order_type", "Synthesis"), spec.get("short_name"))

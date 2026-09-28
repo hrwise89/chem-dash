@@ -68,16 +68,32 @@ class TextPool:
             font_name: str | tuple[str, ...] = ("calibri", "arial")) -> arcade.Text:
         t = self._pool.get(key)
         if t is None:
-            t = arcade.Text("", 0, 0, arcade.color.BLACK, anchor_x="left")
+            t = arcade.Text(text, x, y, color, font_size=font_size, anchor_x=anchor_x,
+                             anchor_y=anchor_y, font_name=font_name)
             self._pool[key] = t
+            return t
+        # x/text already no-op internally when unchanged (arcade.Text's own
+        # setters check first). font_size/font_name/anchor_x/anchor_y do
+        # NOT -- each one unconditionally pushes a full pyglet document
+        # re-layout (_init_document/_update/_create_vertex_lists), which
+        # showed up as the dominant per-frame cost once lists got busier
+        # (shipping bench's multi-line rows: ~3x the get() calls per frame
+        # of a single-line list). Guarding these here, so a call that
+        # hands back the *same* font_size/name/anchors it already has
+        # skips that relayout entirely, is what makes a busy list as cheap
+        # per frame as a sparse one.
         t.text = text
         t.x = x
         t.y = y
         t.color = color
-        t.font_size = font_size
-        t.anchor_x = anchor_x
-        t.anchor_y = anchor_y
-        t.font_name = font_name
+        if t.font_size != font_size:
+            t.font_size = font_size
+        if t.font_name != font_name:
+            t.font_name = font_name
+        if t.anchor_x != anchor_x:
+            t.anchor_x = anchor_x
+        if t.anchor_y != anchor_y:
+            t.anchor_y = anchor_y
         return t
 
 

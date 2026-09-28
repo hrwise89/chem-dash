@@ -92,7 +92,7 @@ class ComputerBenchView(BenchView):
         return rows
 
     def _offer_label(self, contract) -> str:
-        product_desc = f"pure {contract.product}" if contract.requires_pure else contract.product
+        product_desc = f"pure {contract.product}" if contract.requires_purity else contract.product
         return f"{contract.subject} -- deliver {contract.amount:.2f} mol {product_desc} for ${contract.reward:.2f}"
 
     # ---- drawing ----

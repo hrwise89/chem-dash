@@ -124,13 +124,13 @@ class ReactionBenchView(BenchView):
     def _open_order_label(self, contract) -> str:
         board = self.window.contract_board
         have = board.available_product_moles(contract, self.window.chemical_inventory)
-        product_desc = f"pure {contract.product}" if contract.requires_pure else contract.product
+        product_desc = f"pure {contract.product}" if contract.requires_purity else contract.product
         ready = "ready to ship" if have + 1e-9 >= contract.amount else "not enough product yet"
         return (f"{contract.subject} -- need {contract.amount:.2f} mol {product_desc} "
                 f"(have {have:.2f} mol) for ${contract.reward:.2f} ({ready})")
 
     def _order_history_label(self, contract) -> str:
-        product_desc = f"pure {contract.product}" if contract.requires_pure else contract.product
+        product_desc = f"pure {contract.product}" if contract.requires_purity else contract.product
         return f"[Order] {contract.subject} -- delivered {contract.amount:.2f} mol {product_desc}, paid ${contract.reward:.2f}"
 
     def _equipment_rows(self):

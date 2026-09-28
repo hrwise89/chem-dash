@@ -1,24 +1,24 @@
 """
 The shipping bench: hand off product against an order you've already
 accepted on the computer bench. Shipping consumes the required product
-from inventory right away (crude accepted unless the order requires pure
--- see economy.ContractBoard.ship), but payment is deferred until the
-shipment is processed overnight (see day_manager.py / lab_view.go_home /
-lab_view.pass_out), so there's always a one-day gap between shipping an
+from inventory right away (crude accepted unless the order requires
+purity -- see economy.ContractBoard.ship), but payment is deferred until
+the shipment is processed overnight (see day_manager.py / lab_view.go_home
+/ lab_view.pass_out), so there's always a one-day gap between shipping an
 order and getting paid for it.
 
 Accepting/declining new order offers stays on the computer bench (its
 Offers section) -- this bench is only for fulfilling orders already in
 `window.contract_board.accepted` or `.in_transit`.
 
-Each order is a fixed 3-line entry (task / sender / subject), not a
-single line -- a short_name-style one-liner isn't enough room for both
-who sent an order and what it's about, and full messages get truncated,
-so those go on the entry itself instead of only being visible in the
-description panel below. Both the row list and the description are
-rebuilt only when they can actually change -- entering the bench,
-switching tabs, moving the cursor, or shipping -- not on every draw call,
-since nothing here changes on its own between those moments.
+Each order is a fixed 2-line entry -- just the type symbol, the chemical
+(short name, "(P)" suffixed if it requires purity), amount, and reward on
+the first line, sender on the second -- not sender/subject/message, which
+only show in the description panel below for whichever entry the cursor
+is on. Both the row list and the description are rebuilt only when they
+can actually change -- entering the bench, switching tabs, moving the
+cursor, or shipping -- not on every draw call, since nothing here changes
+on its own between those moments.
 """
 
 import arcade
@@ -44,9 +44,9 @@ from settings import SCREEN_WIDTH
 TABS = [("Open Orders", "open_orders"), ("Awaiting pickup", "in_transit")]
 
 LIST_PANEL = Panel(left=40, right=760, bottom=160, top=480)
-LIST_FONT_SIZE = 12
-LIST_LINE_HEIGHT = 22
-LIST_LINES_PER_ENTRY = 3
+LIST_FONT_SIZE = 10
+LIST_LINE_HEIGHT = 20
+LIST_LINES_PER_ENTRY = 2
 LIST_ENTRY_HEIGHT = LIST_LINE_HEIGHT * LIST_LINES_PER_ENTRY
 # The page indicator lives inside LIST_PANEL now (not below/outside it),
 # so its own line's height is reserved here too, trading a bit of visible
@@ -66,23 +66,23 @@ class ShippingBenchView(ThemedBenchView):
         self.mode = "open_orders"
         self.tab_index = 0
         self.cursor_index = 0
-        self.entries = []       # [([line1, line2, line3], contract), ...] for the current tab
+        self.entries = []       # [([line1, line2], contract), ...] for the current tab
         self.description = ""   # the cursor-selected entry's full message
         self._refresh_rows()
 
     # ---- row/description content (only rebuilt when it can change) ----
 
-    def _task_line(self, contract) -> str:
-        product_desc = f"pure {contract.product}" if contract.requires_pure else contract.product
-        return f"[{contract.order_type_letter}] synthesize {contract.amount:.2f} mol {product_desc}"
+    def _summary_line(self, contract) -> str:
+        purity_tag = " (P)" if contract.requires_purity else ""
+        return (f"[{contract.order_type_letter}] {contract.product_short_name}{purity_tag}  "
+                f"x{contract.amount:.2f}   ${contract.reward:.2f}")
 
     def _fit_line(self, key: str, text: str, max_width: float, font_size: int) -> str:
         """One-time (per rebuild) truncation to a single line -- rows are
         only rebuilt on real state changes (see class docstring), so this
         cost is paid once per rebuild, not once per frame."""
         probe = self.text_pool.get(key, text, 0, 0, PANEL_COLOR, font_size=font_size, font_name=FONT_STACK)
-        max_line_width = max_width
-        while probe.content_width > max_line_width and len(text) > 1:
+        while probe.content_width > max_width and len(text) > 1:
             text = text[:-1]
             probe.text = text + "..."
         return probe.text
@@ -90,9 +90,8 @@ class ShippingBenchView(ThemedBenchView):
     def _entry_lines(self, contract) -> list[str]:
         max_width = LIST_PANEL.width - 60  # leaves room for the cursor glyph + left margin
         return [
-            self._fit_line("_probe_task", self._task_line(contract), max_width, LIST_FONT_SIZE),
+            self._fit_line("_probe_summary", self._summary_line(contract), max_width, LIST_FONT_SIZE),
             self._fit_line("_probe_sender", contract.sender, max_width, LIST_FONT_SIZE),
-            self._fit_line("_probe_subject", contract.subject, max_width, LIST_FONT_SIZE),
         ]
 
     def _open_order_description(self, contract) -> str:
