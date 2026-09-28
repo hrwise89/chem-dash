@@ -2,6 +2,7 @@ __pycache__/
 *.pyc
 .venv/
 .ideas
+mockups/
 # Dev-mode log output (devtools.py) -- local runtime data, not source
 chem_dash.log
 
@@ -9,4 +10,5 @@ chem_dash.log
 save.json
 
 # macOS Finder metadata
+.DS_Store
 .DS_Store

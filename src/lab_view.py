@@ -20,7 +20,6 @@ from sprites import make_sprite
 from timer_manager import TimerManager, Timer
 from devtools import logger
 
-
 class LabView(arcade.View):
 	def __init__(self, window, player_start: tuple[int, int] | None = None):
 		# View level attributes

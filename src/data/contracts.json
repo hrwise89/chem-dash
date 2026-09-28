@@ -10,5 +10,23 @@
     "requires_pure": true,
     "amount": 0.3,
     "reward": 55.0
+  },
+  "Stockroom needs crude propionic acid": {
+    "product": "propionic acid",
+    "requires_pure": false,
+    "amount": 1.0,
+    "reward": 35.0
+  },
+  "Flavor lab needs pure ethyl propionate": {
+    "product": "ethyl propionate",
+    "requires_pure": true,
+    "amount": 0.4,
+    "reward": 65.0
+  },
+  "Plastics workshop needs pure acetonitrile": {
+    "product": "acetonitrile",
+    "requires_pure": true,
+    "amount": 0.6,
+    "reward": 50.0
   }
 }
