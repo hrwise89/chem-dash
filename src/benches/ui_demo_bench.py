@@ -116,10 +116,13 @@ class UIDemoBenchView(arcade.View):
 
         draw_slider(SCREEN_WIDTH / 2, 90, 500, 26, self.slider_fraction,
                     min_label="0.5 g", max_label="100 g")
+        # Perfect DOS VGA 437's glyphs are wide enough that a full
+        # instructions line easily runs off both edges of the screen even
+        # at a small font_size -- keep this short (see
+        # ThemedBenchView.draw_instructions's docstring).
         arcade.Text(
-            "LEFT/RIGHT: tabs   UP/DOWN: list   A/D: slider   "
-            "TAB: cycle icon slot   ESC: leave",
-            SCREEN_WIDTH / 2, 30, arcade.color.GRAY, font_size=12, font_name=FONT_STACK,
+            "ARROWS: nav  A/D: slider  TAB: slot  ESC: leave",
+            SCREEN_WIDTH / 2, 30, arcade.color.GRAY, font_size=10, font_name=FONT_STACK,
             anchor_x="center").draw()
 
     def _draw_sample_list(self, panel: Panel):

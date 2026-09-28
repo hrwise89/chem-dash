@@ -19,6 +19,7 @@ import arcade
 
 from benches.ui_common import wrap_to_width
 from devtools import logger
+from settings import SCREEN_WIDTH
 from sprites import texture_for
 
 # ---- Font ----
@@ -402,3 +403,82 @@ def draw_icon_panel(panel: Panel, sprite_key: str, placeholder_label: str = "",
         arcade.Text(placeholder_label, panel.center_x, panel.center_y, DIM_COLOR,
                     font_size=placeholder_font_size, font_name=FONT_STACK,
                     anchor_x="center", anchor_y="center").draw()
+
+
+# ---- Themed bench base ----
+# What BenchView (ui_common.py) is for the old flat-rectangle chrome, this
+# is for the new one: background color, the status pill (time/money/date),
+# and a status-message toast -- the handful of things every bench built
+# with this theme needs regardless of what it otherwise shows. A bench
+# still owns its own mode/state machine and draws its own panels/tabs/
+# lists through the primitives above.
+
+STATUS_PANEL = Panel(left=20, right=780, bottom=545, top=585)
+MESSAGE_Y = 55
+INSTRUCTIONS_Y = 25
+MESSAGE_DURATION = 3.5
+
+
+class ThemedBenchView(arcade.View):
+
+    def __init__(self, window, lab_view):
+        super().__init__()
+        self.window = window
+        self.lab_view = lab_view
+        self.message = ""
+        self.message_color = PANEL_COLOR
+        self.message_timer = 0.0
+
+    def on_show_view(self):
+        # arcade.set_background_color() is global window state, not
+        # per-view -- see lab_view.py's own on_show_view for why this has
+        # to happen every time this view is (re-)shown, not just once at
+        # construction.
+        arcade.set_background_color(arcade.color.BLACK)
+
+    def on_update(self, delta_time):
+        if self.message_timer > 0:
+            self.message_timer -= delta_time
+            if self.message_timer <= 0:
+                self.message = ""
+
+    def show_message(self, text: str, color=PANEL_COLOR, duration: float = MESSAGE_DURATION):
+        self.message = text
+        self.message_color = color
+        self.message_timer = duration
+
+    def draw_status_bar(self, time_str: str, money_str: str, date_str: str):
+        draw_panel(STATUS_PANEL, radius=STATUS_PANEL.height / 2)
+        arcade.Text(time_str, STATUS_PANEL.left + 30, STATUS_PANEL.center_y, PANEL_COLOR,
+                    font_size=14, font_name=FONT_STACK, anchor_x="left", anchor_y="center").draw()
+        arcade.Text(money_str, STATUS_PANEL.center_x, STATUS_PANEL.center_y, PANEL_COLOR,
+                    font_size=14, font_name=FONT_STACK, anchor_x="center", anchor_y="center").draw()
+        arcade.Text(date_str, STATUS_PANEL.right - 30, STATUS_PANEL.center_y, PANEL_COLOR,
+                    font_size=14, font_name=FONT_STACK, anchor_x="right", anchor_y="center").draw()
+
+    def draw_message(self, font_size: int = 11, max_width: float = SCREEN_WIDTH - 80):
+        """Unlike draw_instructions's fixed text, a status message is
+        built from live data (a contract title, an amount) with no fixed
+        length to just shorten -- so this wraps instead, stacking extra
+        lines upward from MESSAGE_Y (away from the instructions line
+        below it, not into it)."""
+        if not self.message:
+            return
+        lines = wrap_to_width(self.message, max_width, font_size=font_size, font_name=FONT_STACK)
+        line_height = font_size + 6
+        # The last line sits at MESSAGE_Y (closest to, but never
+        # overlapping, the instructions line below it); earlier lines
+        # stack upward above it, keeping normal top-to-bottom reading order.
+        for i, line in enumerate(lines):
+            y = MESSAGE_Y + (len(lines) - 1 - i) * line_height
+            arcade.Text(line, SCREEN_WIDTH / 2, y, self.message_color,
+                        font_size=font_size, font_name=FONT_STACK, anchor_x="center").draw()
+
+    def draw_instructions(self, text: str, font_size: int = 10):
+        """Perfect DOS VGA 437's glyphs are wide enough that a full
+        "LEFT/RIGHT: tabs   UP/DOWN: browse   ENTER: ship   ESC: leave"
+        -style line easily runs off both edges of an 800px-wide screen
+        even at a small font_size -- keep this short, or check its
+        content_width against SCREEN_WIDTH before shipping it."""
+        arcade.Text(text, SCREEN_WIDTH / 2, INSTRUCTIONS_Y, DIM_COLOR,
+                    font_size=font_size, font_name=FONT_STACK, anchor_x="center").draw()
