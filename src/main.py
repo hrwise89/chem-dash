@@ -10,6 +10,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module=r"pyglet\.media\.
 import arcade  # noqa: E402
 from settings import (SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE, SPRITE_SCALING, TILE_SIZE,  # noqa: E402
 	GRID_WIDTH, GRID_HEIGHT, PLAYER_COLOR, MAP_BACKGROUND_COLOR)
+from benches.ui_theme import ensure_theme_font_loaded  # noqa: E402
 from lab_view import LabView  # noqa: E402
 from timer_manager import TimerManager  # noqa: E402
 from inventory import load_consumable_catalog, load_equipment_catalog, load_starting_inventories  # noqa: E402
@@ -28,6 +29,7 @@ STARTING_BALANCE = 200.0
 def main():
 	install_crash_logging()  # so a crash always leaves a traceback in chem_dash.log, not just the console
 	window = arcade.Window(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE)
+	ensure_theme_font_loaded()  # see benches/ui_theme.py -- a no-op until the real .ttf is added
 
 	# Game clock
 	window.game_clock = GameClock()

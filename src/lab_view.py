@@ -8,6 +8,7 @@ from benches.purify_bench import PurifyBenchView
 from benches.reaction_bench import ReactionBenchView
 from benches.shipping_bench import ShippingBenchView
 from benches.ui_common import TextPool
+from benches.ui_demo_bench import UIDemoBenchView
 from day_manager import calendar_date_string, clock_time_string
 from door_menu import DoorMenu
 from player import Player
@@ -214,7 +215,7 @@ class LabView(arcade.View):
 		self.keys_held.add(key)
 
 		if self.door_menu.open:
-			self.door_menu.handle_key(key, on_leave_for_day=self.go_home)
+			self.door_menu.handle_key(key, on_leave_for_day=self.go_home, on_ui_demo=self.open_ui_demo)
 			return
 
 		if key == arcade.key.ESCAPE:
@@ -232,6 +233,10 @@ class LabView(arcade.View):
 
 	def on_key_release(self, key, modifiers):
 		self.keys_held.discard(key)
+
+	def open_ui_demo(self):
+		logger.debug("Door menu: opening the UI demo bench")
+		self.window.show_view(UIDemoBenchView(self.window, self))
 
 	# ---- day/night: going home through the door, or passing out ----
 
