@@ -22,13 +22,15 @@ from benches.ui_theme import (
     draw_scrollbar,
     draw_slider,
     draw_tab_bar,
+    scroll_offset_for_cursor,
+    visible_item_count,
+    wrapped_item_rows,
 )
 from settings import SCREEN_WIDTH
 
 TAB_LABELS = ["Tab A", "Tab B", "Tab C"]
 SAMPLE_LIST_ITEMS = [f"Sample item {i}" for i in range(1, 21)]
 SAMPLE_LIST_ITEMS[5] = "Sample item 6 with some much longer text that has to wrap"
-VISIBLE_ROWS = 16  # (list_panel's height 340) / LIST_ROW_HEIGHT, unwrapped
 ICON_SLOT_COUNT = 5
 
 # The list's own layout -- font_size=10 (Perfect DOS VGA 437 renders much
@@ -48,6 +50,13 @@ LIST_RIGHT_MARGIN = 10
 
 class UIDemoBenchView(arcade.View):
 
+    # The list panel is widened by exactly what shrinking the icon panels
+    # to 4/5 their original width frees up (340 -> 272, a 68px difference
+    # -- see the icon panels in on_draw). A fixed attribute (not computed
+    # per-frame) since on_key_press's scroll-to-cursor math needs the same
+    # geometry on_draw uses, and this screen's layout never moves.
+    LIST_PANEL = Panel(left=40, right=448, bottom=140, top=480)
+
     def __init__(self, window, lab_view):
         super().__init__()
         self.window = window
@@ -61,6 +70,18 @@ class UIDemoBenchView(arcade.View):
 
     def on_show_view(self):
         arcade.set_background_color(arcade.color.BLACK)
+
+    # ---- wrap-aware list geometry/scrolling ----
+
+    def _list_max_text_width(self) -> float:
+        text_x = self.LIST_PANEL.left + LIST_LEFT_MARGIN + CURSOR_GLYPH_WIDTH + LIST_CURSOR_GAP
+        return self.LIST_PANEL.right - LIST_RIGHT_MARGIN - text_x
+
+    def _list_max_rows(self) -> int:
+        return int(self.LIST_PANEL.height // LIST_ROW_HEIGHT)
+
+    def _list_row_counts(self) -> list[int]:
+        return wrapped_item_rows(SAMPLE_LIST_ITEMS, self._list_max_text_width(), LIST_FONT_SIZE)
 
     # ---- drawing ----
 
@@ -78,13 +99,10 @@ class UIDemoBenchView(arcade.View):
 
         draw_tab_bar(SCREEN_WIDTH / 2, 505, TAB_LABELS, self.tab_index, spacing=200)
 
-        # The list panel is widened by exactly what shrinking the icon
-        # panels to 4/5 their original width frees up (340 -> 272, a
-        # 68px difference -- see the icon panels below).
-        list_panel = Panel(left=40, right=448, bottom=140, top=480)
-        draw_panel(list_panel)
-        self._draw_sample_list(list_panel)
-        draw_scrollbar(list_panel, len(SAMPLE_LIST_ITEMS), VISIBLE_ROWS, self.scroll_offset)
+        draw_panel(self.LIST_PANEL)
+        self._draw_sample_list(self.LIST_PANEL)
+        visible_count = visible_item_count(self._list_row_counts(), self.scroll_offset, self._list_max_rows())
+        draw_scrollbar(self.LIST_PANEL, len(SAMPLE_LIST_ITEMS), visible_count, self.scroll_offset)
 
         # Icon panels at 4/5 their original size (340x180 and 340x80),
         # anchored to the same top-right corner they had before.
@@ -106,7 +124,7 @@ class UIDemoBenchView(arcade.View):
 
     def _draw_sample_list(self, panel: Panel):
         text_x = panel.left + LIST_LEFT_MARGIN + CURSOR_GLYPH_WIDTH + LIST_CURSOR_GAP
-        max_text_width = panel.right - LIST_RIGHT_MARGIN - text_x
+        max_text_width = self._list_max_text_width()
 
         i = self.scroll_offset
         y = panel.top - LIST_ROW_HEIGHT
@@ -148,7 +166,5 @@ class UIDemoBenchView(arcade.View):
             self.active_icon_slot = (self.active_icon_slot + 1) % ICON_SLOT_COUNT
 
     def _scroll_to_show_cursor(self):
-        if self.list_cursor < self.scroll_offset:
-            self.scroll_offset = self.list_cursor
-        elif self.list_cursor >= self.scroll_offset + VISIBLE_ROWS:
-            self.scroll_offset = self.list_cursor - VISIBLE_ROWS + 1
+        self.scroll_offset = scroll_offset_for_cursor(
+            self._list_row_counts(), self.list_cursor, self.scroll_offset, self._list_max_rows())

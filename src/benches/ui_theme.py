@@ -17,6 +17,7 @@ from dataclasses import dataclass
 
 import arcade
 
+from benches.ui_common import wrap_to_width
 from devtools import logger
 from sprites import texture_for
 
@@ -203,6 +204,53 @@ def draw_scrollbar(panel: Panel, total_items: int, visible_items: int, scroll_of
     arcade.draw_lrbt_rectangle_filled(x - arrow_half, x + arrow_half, thumb_bottom, thumb_top, color)
 
 
+# ---- Wrap-aware list scrolling ----
+# A word-wrapped list item can take more than one visual row, so "how many
+# items are visible" and "when should the cursor force a scroll" can't be
+# a flat row-count-equals-item-count assumption -- these compute both in
+# terms of actual rendered rows, given each item's wrapped row count (see
+# wrapped_item_rows). Panel-agnostic on purpose: callers own drawing.
+
+def wrapped_item_rows(items: list[str], max_text_width: float, font_size: int) -> list[int]:
+    """How many lines each of `items` takes once word-wrapped to
+    max_text_width at font_size (in FONT_STACK) -- index-aligned with
+    `items`."""
+    return [len(wrap_to_width(item, max_text_width, font_size=font_size, font_name=FONT_STACK))
+            for item in items]
+
+
+def visible_item_count(row_counts: list[int], start_index: int, max_rows: int) -> int:
+    """How many items starting at start_index fit within max_rows rendered
+    rows, given each item's row count (see wrapped_item_rows). Always at
+    least 1 once start_index is in range, even if that one item's own row
+    count exceeds max_rows -- it still "fits" the same way it would
+    un-scrolled, just overflowing the panel."""
+    rows_used = 0
+    count = 0
+    for rows in row_counts[start_index:]:
+        if count > 0 and rows_used + rows > max_rows:
+            break
+        rows_used += rows
+        count += 1
+        if rows_used >= max_rows:
+            break
+    return count
+
+
+def scroll_offset_for_cursor(row_counts: list[int], cursor_index: int, scroll_offset: int,
+                              max_rows: int) -> int:
+    """The scroll_offset (an item index) that keeps cursor_index fully
+    within max_rows rendered rows -- scrolls forward one item at a time
+    (matching visible_item_count's own item-at-a-time accounting) rather
+    than jumping straight to the cursor, so the list scrolls the same way
+    regardless of how the wrapped rows above it happen to add up."""
+    if cursor_index < scroll_offset:
+        return cursor_index
+    while cursor_index >= scroll_offset + visible_item_count(row_counts, scroll_offset, max_rows):
+        scroll_offset += 1
+    return scroll_offset
+
+
 # ---- Tab bar ----
 # A horizontal row of tab labels (the current one bright, the rest
 # dimmed), with optional big paging arrows flanking a panel below it.
@@ -336,7 +384,7 @@ def draw_icon_slot_row(panel: Panel, count: int, sprite_key_for=lambda i: None,
 # ---- Decorative icon panel ----
 
 def draw_icon_panel(panel: Panel, sprite_key: str, placeholder_label: str = "",
-                     color=PANEL_COLOR):
+                     color=PANEL_COLOR, placeholder_font_size: int = 11):
     """A rounded panel showing sprites.py's texture for `sprite_key` if
     one exists, scaled to fit -- otherwise just the panel's outline (and
     placeholder_label, if given) so it's obvious in dev that no image is
@@ -352,4 +400,5 @@ def draw_icon_panel(panel: Panel, sprite_key: str, placeholder_label: str = "",
         sprite.draw()
     elif placeholder_label:
         arcade.Text(placeholder_label, panel.center_x, panel.center_y, DIM_COLOR,
-                    font_size=14, font_name=FONT_STACK, anchor_x="center", anchor_y="center").draw()
+                    font_size=placeholder_font_size, font_name=FONT_STACK,
+                    anchor_x="center", anchor_y="center").draw()
