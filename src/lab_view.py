@@ -268,11 +268,21 @@ class LabView(arcade.View):
 		# of the few points a lot of game_clock time can pass without the
 		# player ever opening the contract inbox to trigger a sweep there,
 		# so it needs its own sweep here too (see ContractBoard.sweep_expirations).
-		self.window.contract_board.sweep_expirations(self.window.game_clock.now())
+		now = self.window.game_clock.now()
+		self.window.contract_board.sweep_expirations(now)
 		if paid:
 			total = sum(c.reward for c in paid)
 			logger.info("Overnight payments: %s (total $%.2f)", [c.subject for c in paid], total)
 			message = f"{message} Payment received: ${total:.2f} ({len(paid)} order(s))."
+
+		# An accepted order whose due date passed overnight without being
+		# shipped is pulled from the shipping bench's Open Orders for good
+		# (not just flagged, unlike the mid-day sweep above) -- the day it
+		# was due to be fulfilled by is over.
+		expired = self.window.contract_board.expire_overdue_accepted(now)
+		if expired:
+			logger.info("Orders expired unfulfilled: %s", [c.subject for c in expired])
+			message = f"{message} {len(expired)} order(s) expired unfulfilled and were removed from Open Orders."
 
 		# Autosave at each day boundary -- going home or passing out are
 		# the only points a "day" actually ends, so they're the natural

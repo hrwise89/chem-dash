@@ -1,8 +1,11 @@
 """
-Shared building blocks for the lab's bench views (ReactionBenchView,
-PurifyBenchView, and future ones like it): a bench sprite, a scrollable or
+Shared building blocks for the lab's still-unconverted bench views (only
+ReactionBenchView, as of this writing -- every other bench now builds on
+ui_theme.ThemedBenchView instead): a bench sprite, a scrollable or
 centered menu, an on-screen status message, and word-wrapping so labels
-never run off the edge of the screen.
+never run off the edge of the screen. check_pass_out(), at the bottom, is
+the one thing here every bench still uses regardless of which chrome it
+draws with.
 """
 
 import arcade

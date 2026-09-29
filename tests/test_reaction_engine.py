@@ -519,6 +519,12 @@ class TestReactionEngine(unittest.TestCase):
         self.run_to_completion(inventory, equipment, {"HBr": 1.0, "ethanol": 1.0}, "neat", 20.0, 4.0)
         self.assertEqual(len(self.engine.history), 2)
 
+    def test_products_using_finds_reactions_consuming_the_chemical(self):
+        self.assertEqual(self.engine.products_using("ethyl bromide"), ["ethyl cyanide"])
+
+    def test_products_using_empty_for_a_chemical_never_used_as_a_reactant(self):
+        self.assertEqual(self.engine.products_using("ethyl propionate"), [])
+
 
 class TestReactionEngineSkills(unittest.TestCase):
     """skills=None (the default) must behave exactly like before it

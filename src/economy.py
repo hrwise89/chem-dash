@@ -338,6 +338,26 @@ class ContractBoard:
                 contract.unfulfilled_recorded = True
                 self._stats_for(contract.sender).offer_unfulfilled += 1
 
+    def expire_overdue_accepted(self, now: float) -> list[Contract]:
+        """Pulls every accepted-but-overdue contract (due_date passed,
+        still not shipped) out of `accepted` for good, into `expired`.
+        Unlike sweep_expirations()'s merely-flag-it bookkeeping (meant for
+        mid-day browsing, where an overdue order should stay open and
+        shippable until the day actually ends), this is the "the day is
+        over, it didn't get fulfilled in time" transition -- call it once,
+        at the overnight boundary (see lab_view._start_new_day), not from
+        a view's on_show_view. Returns what was removed, so the caller can
+        tell the player about it; counts toward offer_unfulfilled the same
+        as sweep_expirations() would, but only once per contract."""
+        overdue = [c for c in self.accepted if c.due_date is not None and now >= c.due_date]
+        for contract in overdue:
+            self.accepted.remove(contract)
+            self.expired.append(contract)
+            if not contract.unfulfilled_recorded:
+                contract.unfulfilled_recorded = True
+                self._stats_for(contract.sender).offer_unfulfilled += 1
+        return overdue
+
     def available_product_moles(self, contract: Contract, inventory: ChemicalInventory) -> float:
         """How much of `contract`'s product is currently on hand and
         eligible to ship -- just the pure form if requires_purity,

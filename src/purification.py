@@ -37,6 +37,13 @@ from inventory import (  # noqa: F401 -- re-exported
 from skills import PURIFICATION, purification_speed_multiplier
 
 SILICA_NAME = "Silica Gel"
+
+# A crude remainder under this (mass, in grams) can't be purified on its
+# own -- it won't reach even a scale's smallest slider notch -- so it
+# would otherwise sit in inventory forever as unusable dust. purify()
+# absorbs it into whatever's being purified instead (see the comment at
+# its dust-bump check).
+DUST_THRESHOLD_G = 0.005
 TECHNICAL_SOLVENT_NAME = "Bulk Solvent (Technical Grade, 95%)"
 REAGENT_SOLVENT_NAME = "Bulk Solvent (Reagent Grade, 99%)"
 
@@ -203,6 +210,11 @@ PURIFY_SCALES: dict[str, PurifyScaleSpec] = {
 PURIFY_SCALE_ORDER = ["micro", "bench", "pilot", "production"]
 PURIFY_METHOD_ORDER = [COLUMN_CHROMATOGRAPHY, DISTILLATION]
 
+# How many columns/distillations of the same method a player can run
+# concurrently in one batch (see purify_batch()) -- an arbitrary game-feel
+# cap, not derived from anything physical.
+MAX_CONCURRENT_RUNS = 3
+
 
 def scale_is_available(scale_key: str, equipment_inventory, skills=None) -> bool:
     if scale_key in DISABLED_SCALES:
@@ -222,6 +234,18 @@ def method_is_available(scale_key: str, method_key: str, equipment_inventory, sk
     if skills is not None and not skills.meets(method.required_skill):
         return False
     return bool(equipment_inventory.available_items(method.equipment_type))
+
+
+def max_concurrent_runs(scale_key: str, method_key: str, equipment_inventory, skills=None) -> int:
+    """How many columns/distillations of `method_key` the player can run
+    at once right now -- min(MAX_CONCURRENT_RUNS, how many matching
+    columns they own and aren't already using). 0 if the method isn't
+    available at all (see method_is_available)."""
+    if not method_is_available(scale_key, method_key, equipment_inventory, skills):
+        return 0
+    method = PURIFY_SCALES[scale_key].methods[method_key]
+    owned = len(equipment_inventory.available_items(method.equipment_type))
+    return min(MAX_CONCURRENT_RUNS, owned)
 
 
 def effective_time_hours(method: PurifyMethodSpec, skills=None) -> float:
@@ -318,6 +342,15 @@ def purify(
         raise ValueError(f"Can't purify {mass_g:.3f} g of {crude_name} (have {have_mass_g:.3f} g).")
     native_amount = min(native_amount, have_native)
 
+    # Dust bump: if what's requested would leave under DUST_THRESHOLD_G of
+    # crude behind, take all of it instead -- consumable cost below is
+    # still based on the originally requested mass_g (the sub-5mg
+    # difference is negligible), only the crude consumed/product yielded
+    # grows to match what's actually taken.
+    leftover_mass_g = mass_grams(inventory, crude_name, have_native - native_amount)
+    if 0 < leftover_mass_g < DUST_THRESHOLD_G:
+        native_amount = have_native
+
     silica_g, solvent_ml = method.cost(mass_g)
     if silica_g > 0 and not consumables.has(SILICA_NAME, silica_g):
         have_silica = consumables.contents.get(SILICA_NAME, 0.0)
@@ -330,7 +363,11 @@ def purify(
 
     rng = rng or random
     yield_fraction = rng.uniform(method.min_yield, method.max_yield)
-    purified_mass_g = mass_g * yield_fraction
+    # Based on native_amount (the actual amount consumed, which the dust
+    # bump above may have grown past the requested mass_g), not mass_g
+    # itself -- a dust-absorbing run yields proportionally more product.
+    consumed_mass_g = mass_grams(inventory, crude_name, native_amount)
+    purified_mass_g = consumed_mass_g * yield_fraction
 
     time_hours = effective_time_hours(method, skills)
 
@@ -346,7 +383,115 @@ def purify(
     logger.info(
         "Purified %.3fg %s -> %.3fg %s via %s (%s scale, %.1f%% yield), +%.2fh, "
         "using %.1fg silica + %.1fmL %s",
-        mass_g, crude_name, purified_mass_g, pure_name, method.label, scale.label,
+        consumed_mass_g, crude_name, purified_mass_g, pure_name, method.label, scale.label,
         yield_fraction * 100, time_hours, silica_g, solvent_ml, method.solvent_name,
     )
     return pure_name, purified_mass_g, yield_fraction
+
+
+def purify_batch(
+    scale_key: str,
+    method_key: str,
+    inventory,
+    equipment_inventory,
+    consumables,
+    game_clock,
+    crude_name: str,
+    mass_values_g: list[float],
+    rng: random.Random | None = None,
+    skills=None,
+) -> list[tuple[str, float, float]]:
+    """
+    Like purify(), but runs len(mass_values_g) columns/distillations of
+    the same method concurrently (see max_concurrent_runs) -- one entry
+    per run, each purifying that much crude independently (its own
+    randomly-rolled yield). Total crude/silica/solvent consumed is the
+    sum across every run, but the game clock only advances once by the
+    method's fixed time_hours: that's the entire point of running several
+    at once instead of one after another -- more product per batch in the
+    same wall-clock time, not less time per run.
+
+    Raises ValueError for the same reasons as purify() (scale/method
+    unavailable, nothing to purify, not enough crude/silica/solvent), plus
+    if more runs are requested than max_concurrent_runs() allows. Returns
+    a list of (pure_name, purified_mass_g, yield_fraction), one per run,
+    in the same order as mass_values_g.
+    """
+    pure_name = pure_name_for(crude_name)  # raises NotCrudeError if not crude
+
+    scale = PURIFY_SCALES[scale_key]
+    if not scale_is_available(scale_key, equipment_inventory, skills):
+        raise ValueError(f"{scale.label} scale isn't available.")
+    if not method_is_available(scale_key, method_key, equipment_inventory, skills):
+        method_label = scale.methods[method_key].label if method_key in scale.methods else method_key
+        raise ValueError(f"{method_label} isn't available at {scale.label} scale.")
+
+    method = scale.methods[method_key]
+
+    if not mass_values_g:
+        raise ValueError("Nothing to purify.")
+    if any(m <= 0 for m in mass_values_g):
+        raise ValueError("Nothing to purify.")
+    max_runs = max_concurrent_runs(scale_key, method_key, equipment_inventory, skills)
+    if len(mass_values_g) > max_runs:
+        raise ValueError(f"Only {max_runs} {method.label} column(s) available at {scale.label} scale.")
+
+    total_mass_g = sum(mass_values_g)
+    native_amount = native_amount_for_mass(inventory, crude_name, total_mass_g)
+    have_native = inventory.contents.get(crude_name, 0.0)
+    # Same rounding-tolerance reasoning as purify() -- see its own comment.
+    tolerance = max(1e-9, have_native * 1e-6)
+    if native_amount > have_native + tolerance:
+        have_mass_g = mass_grams(inventory, crude_name, have_native)
+        raise ValueError(f"Can't purify {total_mass_g:.3f} g of {crude_name} (have {have_mass_g:.3f} g).")
+    native_amount = min(native_amount, have_native)
+
+    # Dust bump (see purify()) -- shared across the whole batch's draw
+    # from the same crude stock, attributed to the last run for output
+    # purposes (arbitrary; the split doesn't matter, only the total does).
+    dust_bonus_g = 0.0
+    leftover_mass_g = mass_grams(inventory, crude_name, have_native - native_amount)
+    if 0 < leftover_mass_g < DUST_THRESHOLD_G:
+        dust_bonus_g = leftover_mass_g
+        native_amount = have_native
+
+    total_silica_g = 0.0
+    total_solvent_ml = 0.0
+    for m in mass_values_g:
+        silica_g, solvent_ml = method.cost(m)
+        total_silica_g += silica_g
+        total_solvent_ml += solvent_ml
+    if total_silica_g > 0 and not consumables.has(SILICA_NAME, total_silica_g):
+        have_silica = consumables.contents.get(SILICA_NAME, 0.0)
+        raise ValueError(f"Not enough {SILICA_NAME} (need {total_silica_g:.1f} g, have {have_silica:.1f} g).")
+    if total_solvent_ml > 0 and not consumables.has(method.solvent_name, total_solvent_ml):
+        have_solvent = consumables.contents.get(method.solvent_name, 0.0)
+        raise ValueError(
+            f"Not enough {method.solvent_name} (need {total_solvent_ml:.1f} mL, have {have_solvent:.1f} mL)."
+        )
+
+    rng = rng or random
+    run_masses_g = list(mass_values_g)
+    run_masses_g[-1] += dust_bonus_g
+    results = [(pure_name, m * (yf := rng.uniform(method.min_yield, method.max_yield)), yf) for m in run_masses_g]
+
+    time_hours = effective_time_hours(method, skills)
+
+    if total_silica_g > 0:
+        consumables.remove(SILICA_NAME, total_silica_g)
+    if total_solvent_ml > 0:
+        consumables.remove(method.solvent_name, total_solvent_ml)
+    inventory.remove(crude_name, native_amount)
+    for _, purified_mass_g, _ in results:
+        purified_native = native_amount_for_mass(inventory, pure_name, purified_mass_g)
+        inventory.add(pure_name, purified_native)
+    game_clock.advance(time_hours)
+
+    logger.info(
+        "Purified %d concurrent %s run(s) totalling %.3fg %s -> %s (%s scale), +%.2fh, "
+        "using %.1fg silica + %.1fmL %s",
+        len(results), method.label, sum(run_masses_g), crude_name,
+        ["%.3fg (%.1f%%)" % (m, y * 100) for _, m, y in results], scale.label,
+        time_hours, total_silica_g, total_solvent_ml, method.solvent_name,
+    )
+    return results

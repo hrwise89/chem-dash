@@ -102,25 +102,36 @@ class ShippingBenchView(ThemedBenchView):
     # ---- row/description content (only rebuilt when it can change) ----
 
     def _summary_line(self, contract) -> str:
-        purity_tag = " (P)" if contract.requires_purity else ""
-        return f"[{contract.order_type_letter}] {contract.product}{purity_tag}  {contract.amount:.2f} mol   ${contract.reward:.2f}"
+        return f"[{contract.order_type_letter}] {contract.subject}"
+
+    def _detail_line(self, contract) -> str:
+        return f"{contract.sender} - Due: {contract.due_date_label} - ${contract.reward:.2f}"
 
     def _entry_lines(self, contract) -> list[str]:
+        # Same row format as the contract inbox (see contract_inbox.py) --
+        # built with the same primitives/constants on purpose, so the two
+        # screens read as one system.
         max_width = LIST_PANEL.width - 60  # leaves room for the cursor glyph + left margin
         probe = self.text_pool.get("_probe_row", "", 0, 0, PANEL_COLOR,
                                     font_size=LIST_FONT_SIZE, font_name=FONT_STACK)
         summary = truncate_to_width(probe, self._summary_line(contract), max_width - LIST_LINE_INDENTS[0])
-        sender = truncate_to_width(probe, contract.sender, max_width - LIST_LINE_INDENTS[1])
-        return [summary, sender]
+        detail = truncate_to_width(probe, self._detail_line(contract), max_width - LIST_LINE_INDENTS[1])
+        return [summary, detail]
+
+    def _product_desc(self, contract) -> str:
+        purity_tag = " (pure)" if contract.requires_purity else ""
+        return f"{contract.amount:.2f} mol {contract.product}{purity_tag}"
 
     def _open_order_description(self, contract) -> str:
         board = self.window.contract_board
         have = board.available_product_moles(contract, self.window.chemical_inventory)
         ready = "READY" if have + 1e-9 >= contract.amount else "not enough product yet"
-        return f"{contract.sender}: {contract.message} (${contract.reward:.2f}) [{ready}]"
+        return (f"{contract.sender}: {contract.message} (need {self._product_desc(contract)} for "
+                f"${contract.reward:.2f}) [{ready}]")
 
     def _in_transit_description(self, contract) -> str:
-        return f"{contract.sender}: {contract.message} (${contract.reward:.2f} arriving next morning)"
+        return (f"{contract.sender}: {contract.message} ({self._product_desc(contract)}, "
+                f"${contract.reward:.2f} arriving next morning)")
 
     def _refresh_rows(self):
         pool = self.window.contract_board.accepted if self.mode == "open_orders" \

@@ -260,6 +260,36 @@ class TestContractBoard(unittest.TestCase):
         self.board.sweep_expirations(now=HOURS_PER_DAY + 10.0)
         self.assertEqual(stats.offer_unfulfilled, 1)  # not double-counted on a later sweep
 
+    def test_expire_overdue_accepted_removes_from_accepted_and_returns_it(self):
+        contract = self.offer(days_to_complete=0)
+        self.board.accept(contract.contract_id, self.day_start)  # due_date = HOURS_PER_DAY
+        expired = self.board.expire_overdue_accepted(now=HOURS_PER_DAY + 0.1)
+        self.assertEqual(expired, [contract])
+        self.assertNotIn(contract, self.board.accepted)
+        self.assertIn(contract, self.board.expired)
+        self.assertEqual(self.board.sender_stats[contract.sender].offer_unfulfilled, 1)
+
+    def test_expire_overdue_accepted_leaves_contract_not_yet_due(self):
+        contract = self.offer(days_to_complete=5)
+        self.board.accept(contract.contract_id, self.day_start)
+        expired = self.board.expire_overdue_accepted(now=1.0)
+        self.assertEqual(expired, [])
+        self.assertIn(contract, self.board.accepted)
+
+    def test_expire_overdue_accepted_does_not_double_count_stat_after_sweep_flagged_it(self):
+        contract = self.offer(days_to_complete=0)
+        self.board.accept(contract.contract_id, self.day_start)
+        self.board.sweep_expirations(now=HOURS_PER_DAY + 0.1)  # flags it first, mid-day
+        self.board.expire_overdue_accepted(now=HOURS_PER_DAY + 0.2)
+        self.assertEqual(self.board.sender_stats[contract.sender].offer_unfulfilled, 1)
+
+    def test_expire_overdue_accepted_ignores_open_ended_contracts(self):
+        contract = self.offer(days_to_complete=None)
+        self.board.accept(contract.contract_id, self.day_start)
+        expired = self.board.expire_overdue_accepted(now=1_000_000.0)
+        self.assertEqual(expired, [])
+        self.assertIn(contract, self.board.accepted)
+
     # --- Per-sender stats ---
 
     def test_reject_same_day_vs_next_day_tracked_separately(self):

@@ -16,6 +16,7 @@ from purification import (  # noqa: E402
     BENCH_SCALE,
     COLUMN_CHROMATOGRAPHY,
     DISTILLATION,
+    MAX_CONCURRENT_RUNS,
     MICRO_SCALE,
     PILOT_SCALE,
     PRODUCTION_SCALE,
@@ -27,10 +28,12 @@ from purification import (  # noqa: E402
     effective_time_hours,
     is_crude,
     mass_grams,
+    max_concurrent_runs,
     method_is_available,
     native_amount_for_mass,
     pure_name_for,
     purify,
+    purify_batch,
     scale_is_available,
 )
 from skills import PURIFICATION, PlayerSkills
@@ -182,6 +185,31 @@ class TestScaleAndMethodAvailability(unittest.TestCase):
         self.equipment.add_item("chroma_column_micro", "Chromatography Column (Micro)")
         self.assertTrue(scale_is_available("micro", self.equipment, PlayerSkills()))
         self.assertTrue(method_is_available("micro", COLUMN_CHROMATOGRAPHY, self.equipment, PlayerSkills()))
+
+
+class TestMaxConcurrentRuns(unittest.TestCase):
+
+    def setUp(self):
+        self.equipment = EquipmentInventory()
+
+    def test_zero_when_method_unavailable(self):
+        self.assertEqual(max_concurrent_runs("micro", COLUMN_CHROMATOGRAPHY, self.equipment), 0)
+
+    def test_matches_owned_count_under_the_cap(self):
+        self.equipment.add_item("chroma_column_micro", "x")
+        self.equipment.add_item("chroma_column_micro", "x")
+        self.assertEqual(max_concurrent_runs("micro", COLUMN_CHROMATOGRAPHY, self.equipment), 2)
+
+    def test_caps_at_max_concurrent_runs_even_with_more_owned(self):
+        for _ in range(MAX_CONCURRENT_RUNS + 2):
+            self.equipment.add_item("chroma_column_micro", "x")
+        self.assertEqual(max_concurrent_runs("micro", COLUMN_CHROMATOGRAPHY, self.equipment), MAX_CONCURRENT_RUNS)
+
+    def test_in_use_columns_are_not_counted(self):
+        self.equipment.add_item("chroma_column_micro", "x")
+        item = self.equipment.add_item("chroma_column_micro", "x")
+        item.in_use = True
+        self.assertEqual(max_concurrent_runs("micro", COLUMN_CHROMATOGRAPHY, self.equipment), 1)
 
 
 class TestPurify(unittest.TestCase):
@@ -373,6 +401,98 @@ class TestPurify(unittest.TestCase):
             "ethyl bromide (crude)", max_selectable, rng=self.rng,
         )
         self.assertNotIn("ethyl bromide (crude)", inventory.contents)  # fully consumed
+
+    # --- Dust bump: a sub-5mg remainder is absorbed rather than stranded ---
+
+    def test_leaving_under_5mg_crude_consumes_all_of_it_instead(self):
+        # 100 mL * density 2.0 = 200 g on hand; requesting 199.997 g would
+        # leave 0.003 g (3 mg) -- under DUST_THRESHOLD_G -- so all of it
+        # should be consumed instead of stranding that dust.
+        pure_name, purified_mass_g, yield_fraction = self.run_purify("bench", DISTILLATION, 199.997)
+        self.assertNotIn("ethyl bromide (crude)", self.inventory.contents)  # fully consumed, not 0.0015 mL left
+        self.assertAlmostEqual(purified_mass_g, 200.0 * yield_fraction, places=6)
+
+    def test_leaving_5mg_or_more_crude_does_not_bump(self):
+        # Requesting 199.0 g leaves 1 g behind -- well over DUST_THRESHOLD_G
+        # -- so only the requested amount is consumed, as normal.
+        self.run_purify("bench", DISTILLATION, 199.0)
+        self.assertAlmostEqual(self.inventory.contents["ethyl bromide (crude)"], 0.5, places=6)  # 1 g / density 2.0
+
+    def test_dust_bump_does_not_change_consumable_cost(self):
+        # The dust bump grows the crude consumed/product yielded, but the
+        # consumable cost stays based on the originally requested mass_g.
+        self.run_purify("bench", COLUMN_CHROMATOGRAPHY, 199.997)
+        silica_g, solvent_ml = BENCH_SCALE.methods[COLUMN_CHROMATOGRAPHY].cost(199.997)
+        self.assertAlmostEqual(self.consumables.contents[SILICA_NAME], 1000.0 - silica_g, places=6)
+        self.assertAlmostEqual(self.consumables.contents[TECHNICAL_SOLVENT_NAME], 5000.0 - solvent_ml, places=6)
+
+
+class TestPurifyBatch(unittest.TestCase):
+
+    def setUp(self):
+        self.inventory = ChemicalInventory(species_catalog=SPECIES_CATALOG)
+        self.inventory.add("ethyl bromide (crude)", 100.0)  # 100 mL * density 2.0 = 200 g
+        self.equipment = EquipmentInventory()
+        for _ in range(3):
+            self.equipment.add_item("chroma_column_bench", "Chromatography Column (Bench)")
+        self.consumables = ConsumableInventory()
+        self.consumables.add(SILICA_NAME, 1000.0)
+        self.consumables.add(TECHNICAL_SOLVENT_NAME, 5000.0)
+        self.clock = GameClock()
+        self.rng = random.Random(1234)
+
+    def run_batch(self, mass_values_g, **kwargs):
+        return purify_batch(
+            "bench", COLUMN_CHROMATOGRAPHY, self.inventory, self.equipment, self.consumables, self.clock,
+            "ethyl bromide (crude)", mass_values_g, rng=self.rng, **kwargs,
+        )
+
+    def test_one_result_per_requested_run_with_independent_yields(self):
+        results = self.run_batch([10.0, 20.0, 30.0])
+        self.assertEqual(len(results), 3)
+        for (pure_name, purified_mass_g, yield_fraction), mass_g in zip(results, [10.0, 20.0, 30.0]):
+            self.assertEqual(pure_name, "ethyl bromide")
+            self.assertGreaterEqual(yield_fraction, 0.80)
+            self.assertLessEqual(yield_fraction, 1.00)
+            self.assertAlmostEqual(purified_mass_g, mass_g * yield_fraction, places=6)
+
+    def test_clock_advances_once_regardless_of_run_count(self):
+        self.run_batch([10.0, 20.0, 30.0])
+        self.assertAlmostEqual(self.clock.now(), 1.0, places=6)  # bench chromatography's flat time_hours
+
+    def test_consumables_sum_across_every_run(self):
+        method = BENCH_SCALE.methods[COLUMN_CHROMATOGRAPHY]
+        self.run_batch([10.0, 20.0])
+        expected_silica = sum(method.cost(m)[0] for m in (10.0, 20.0))
+        expected_solvent = sum(method.cost(m)[1] for m in (10.0, 20.0))
+        self.assertAlmostEqual(self.consumables.contents[SILICA_NAME], 1000.0 - expected_silica, places=6)
+        self.assertAlmostEqual(self.consumables.contents[TECHNICAL_SOLVENT_NAME], 5000.0 - expected_solvent,
+                                places=6)
+
+    def test_total_crude_consumed_matches_sum_of_runs(self):
+        self.run_batch([10.0, 20.0])
+        self.assertAlmostEqual(self.inventory.contents["ethyl bromide (crude)"], (200.0 - 30.0) / 2.0, places=6)
+
+    def test_rejects_more_runs_than_owned_columns(self):
+        with self.assertRaises(ValueError):
+            self.run_batch([10.0, 10.0, 10.0, 10.0])  # only 3 columns owned
+
+    def test_rejects_when_total_exceeds_crude_on_hand(self):
+        with self.assertRaises(ValueError):
+            self.run_batch([100.0, 100.0, 100.0])  # 300 g requested, only 200 g on hand
+        self.assertAlmostEqual(self.inventory.contents["ethyl bromide (crude)"], 100.0, places=6)  # untouched
+
+    def test_empty_run_list_raises(self):
+        with self.assertRaises(ValueError):
+            self.run_batch([])
+
+    def test_dust_bump_absorbs_shared_leftover_into_last_run(self):
+        # Requesting 199.997 g total (across 2 runs) leaves 3 mg -- under
+        # DUST_THRESHOLD_G -- so all 200 g should be consumed.
+        results = self.run_batch([100.0, 99.997])
+        self.assertNotIn("ethyl bromide (crude)", self.inventory.contents)
+        _, last_purified_mass_g, last_yield = results[-1]
+        self.assertAlmostEqual(last_purified_mass_g, 100.0 * last_yield, places=4)
 
 
 if __name__ == "__main__":

@@ -226,6 +226,20 @@ class ReactionEngine:
             db[name] = ReactionDefinition(**r)
         return db
 
+    def products_using(self, chemical_name: str) -> list[str]:
+        """Every product name from a reaction that consumes `chemical_name`
+        as a reactant -- for the purify bench's "Used in:" description.
+        Empty if it isn't a reactant in any known reaction. Order follows
+        reaction_db's own (insertion) order; a chemical feeding into the
+        same product via more than one reaction lists it once per
+        reaction, not deduplicated -- there are only a handful of
+        reactions today, so that's never actually visible."""
+        products = []
+        for definition in self.reaction_db.values():
+            if chemical_name in definition.reactants:
+                products.extend(definition.products.keys())
+        return products
+
     def find_match(self, reagents: dict[str, float]) -> tuple[str, ReactionDefinition] | None:
         """
         Check whether the provided reagents match any known reaction.
