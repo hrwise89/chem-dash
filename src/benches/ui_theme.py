@@ -530,7 +530,29 @@ class ThemedBenchView(arcade.View):
         # construction.
         arcade.set_background_color(arcade.color.BLACK)
 
+    def on_draw(self):
+        self.draw_content()
+        if self.window.notebook.is_open:
+            self.window.notebook.draw(self.window)
+
+    def draw_content(self):
+        raise NotImplementedError
+
+    def on_key_press(self, key, modifiers):
+        if key == arcade.key.N:
+            self.window.notebook.toggle()
+            return
+        if self.window.notebook.is_open:
+            self.window.notebook.handle_key(key, self.window)
+            return
+        self.handle_content_keys(key, modifiers)
+
+    def handle_content_keys(self, key, modifiers):
+        raise NotImplementedError
+
     def on_update(self, delta_time):
+        if self.window.notebook.is_open:
+            return  # time (and everything else) pauses while the notebook is open
         if self.message_timer > 0:
             self.message_timer -= delta_time
             if self.message_timer <= 0:

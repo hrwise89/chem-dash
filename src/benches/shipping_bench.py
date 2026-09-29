@@ -166,12 +166,14 @@ class ShippingBenchView(ThemedBenchView):
 
     def on_update(self, delta_time):
         super().on_update(delta_time)
+        if self.window.notebook.is_open:
+            return
         if self.description_override_timer > 0:
             self.description_override_timer -= delta_time
             if self.description_override_timer <= 0:
                 self.description_override_lines = []
 
-    def on_draw(self):
+    def draw_content(self):
         self.clear()
 
         hours = self.window.day_manager.hours_into_day(self.window.game_clock)
@@ -206,7 +208,7 @@ class ShippingBenchView(ThemedBenchView):
 
     # ---- input ----
 
-    def on_key_press(self, key, modifiers):
+    def handle_content_keys(self, key, modifiers):
         if key == arcade.key.ESCAPE:
             logger.debug("Shipping bench: left the bench, returning to lab floor")
             self.window.show_view(self.lab_view)

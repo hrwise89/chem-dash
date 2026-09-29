@@ -20,6 +20,7 @@ from day_manager import DayManager  # noqa: E402
 from economy import ContractBoard, Wallet, load_contract_offers  # noqa: E402
 from devtools import install_crash_logging  # noqa: E402
 from message_log import MessageLog  # noqa: E402
+from notebook import Notebook  # noqa: E402
 from save_game import load_game  # noqa: E402
 from skills import PlayerSkills  # noqa: E402
 
@@ -62,6 +63,9 @@ def main():
 	window.player_skills = PlayerSkills()
 
 	window.timer_manager = TimerManager()  # attach it to the window
+
+	# The notebook overlay (N key) -- see notebook.py.
+	window.notebook = Notebook()
 
 	# Resume a save from the last day boundary, if one exists (see
 	# lab_view.py's autosave in _start_new_day) -- overwrites the fresh

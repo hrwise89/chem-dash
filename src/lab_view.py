@@ -136,6 +136,9 @@ class LabView(arcade.View):
 		if self.door_menu.open:
 			self.door_menu.draw()
 
+		if self.window.notebook.is_open:
+			self.window.notebook.draw(self.window)
+
 	def draw_status_bar(self):
 		arcade.draw_lrbt_rectangle_filled(0, SCREEN_WIDTH, SCREEN_HEIGHT - STATUS_BAR_HEIGHT, SCREEN_HEIGHT,
 			arcade.color.DARK_SLATE_GRAY)
@@ -162,6 +165,8 @@ class LabView(arcade.View):
 			y += line_height
 
 	def on_update(self, delta_time):
+		if self.window.notebook.is_open:
+			return  # time (and everything else) pauses while the notebook is open
 		if self.door_menu.open:
 			return  # time (and everything else) pauses while the menu is open
 
@@ -216,6 +221,14 @@ class LabView(arcade.View):
 
 	def on_key_press(self, key, modifiers):
 		self.keys_held.add(key)
+
+		if key == arcade.key.N:
+			self.window.notebook.toggle()
+			return
+
+		if self.window.notebook.is_open:
+			self.window.notebook.handle_key(key, self.window)
+			return
 
 		if self.door_menu.open:
 			self.door_menu.handle_key(key, on_leave_for_day=self.go_home, on_ui_demo=self.open_ui_demo)

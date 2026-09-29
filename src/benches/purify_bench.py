@@ -594,6 +594,8 @@ class PurifyBenchView(ThemedBenchView):
 
     def on_update(self, delta_time):
         super().on_update(delta_time)
+        if self.window.notebook.is_open:
+            return
         if self.stage != "sliders" or self.held_key not in (arcade.key.LEFT, arcade.key.RIGHT):
             return
         self.held_time += delta_time
@@ -644,7 +646,7 @@ class PurifyBenchView(ThemedBenchView):
 
     # ---- drawing / input dispatch ----
 
-    def on_draw(self):
+    def draw_content(self):
         self.clear()
 
         hours = self.window.day_manager.hours_into_day(self.window.game_clock)
@@ -663,7 +665,7 @@ class PurifyBenchView(ThemedBenchView):
 
         self.draw_message()
 
-    def on_key_press(self, key, modifiers):
+    def handle_content_keys(self, key, modifiers):
         if self.stage == "pick_crude":
             self.handle_pick_crude_keys(key)
         elif self.stage == "method":

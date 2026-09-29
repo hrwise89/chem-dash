@@ -55,7 +55,7 @@ class ComputerBenchView(ThemedBenchView):
 
     # ---- drawing ----
 
-    def on_draw(self):
+    def draw_content(self):
         self.clear()
 
         hours = self.window.day_manager.hours_into_day(self.window.game_clock)
@@ -86,7 +86,7 @@ class ComputerBenchView(ThemedBenchView):
 
     # ---- input ----
 
-    def on_key_press(self, key, modifiers):
+    def handle_content_keys(self, key, modifiers):
         if key == arcade.key.ESCAPE:
             logger.debug("Computer bench: left the bench, returning to lab floor")
             self.window.show_view(self.lab_view)

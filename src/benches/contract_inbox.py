@@ -107,7 +107,7 @@ class ContractInboxView(ThemedBenchView):
 
     # ---- drawing ----
 
-    def on_draw(self):
+    def draw_content(self):
         self.clear()
 
         hours = self.window.day_manager.hours_into_day(self.window.game_clock)
@@ -142,7 +142,7 @@ class ContractInboxView(ThemedBenchView):
 
     # ---- input ----
 
-    def on_key_press(self, key, modifiers):
+    def handle_content_keys(self, key, modifiers):
         if key == arcade.key.ESCAPE:
             logger.debug("Contract inbox: left the bench, returning to the computer bench menu")
             self.window.show_view(self.lab_view)
