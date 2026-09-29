@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 import arcade
 
-from benches.ui_common import TextPool
+from benches.ui_common import TextPool, wrap_to_width
 from devtools import logger
 from settings import SCREEN_WIDTH
 from sprites import texture_for
@@ -87,6 +87,48 @@ PANEL_BORDER_WIDTH = 2
 # alone was a real per-frame cost; 20 is visually indistinguishable at
 # this radius.
 ARC_SEGMENTS = 20
+
+
+def truncate_to_width(probe: arcade.Text, text: str, max_width: float, suffix: str = "...") -> str:
+    """Shortens `text` (plus `suffix`) until it fits max_width, using
+    `probe` (an already-positioned/sized/fonted Text) to measure --
+    binary search over the cut point rather than trimming one character
+    at a time, so a long string costs O(log n) layout recomputations
+    instead of O(n). That matters: each `probe.text = ...` assignment
+    forces pyglet to re-shape the text, and a naive one-char-at-a-time
+    scan over a ~250-character order message was measured costing over
+    100ms on its own -- long enough on its own to make a single arrow
+    keypress feel stuck. Only call this from a rebuild path (entering a
+    screen, moving a cursor, changing a tab), never from on_draw."""
+    probe.text = text
+    if probe.content_width <= max_width:
+        return text
+    lo, hi = 0, len(text)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        probe.text = text[:mid] + suffix
+        if probe.content_width <= max_width:
+            lo = mid
+        else:
+            hi = mid - 1
+    probe.text = text[:lo] + suffix
+    return probe.text
+
+
+def wrap_and_fit(probe: arcade.Text, text: str, max_width: float, max_lines: int,
+                  font_size: int = 12, font_name=FONT_STACK) -> list[str]:
+    """Word-wraps `text` to max_width (see ui_common.wrap_to_width -- a
+    handful of per-word measurements, cheap even for a long paragraph),
+    then caps it at max_lines, truncating only the last kept line (via
+    truncate_to_width, one more O(log n) measurement) if it had to cut
+    anything. Call this from a rebuild path (cursor move, tab switch),
+    not on_draw -- the result is a list of plain lines to draw top-down."""
+    lines = wrap_to_width(text, max_width, font_size=font_size, font_name=font_name, probe=probe)
+    if len(lines) <= max_lines:
+        return lines
+    kept = lines[:max_lines]
+    kept[-1] = truncate_to_width(probe, kept[-1], max_width)
+    return kept
 
 
 @dataclass
@@ -166,6 +208,20 @@ def draw_panel(panel: Panel, color=PANEL_COLOR, bg_color=PANEL_BG_COLOR,
     draw_rounded_rect_outline(panel, color, radius, border_width)
 
 
+def draw_wrapped_lines(panel: Panel, text_pool: TextPool, key_prefix: str, lines: list[str],
+                        line_height: float, font_size: int = 12, left_margin: float = 10,
+                        color=PANEL_COLOR):
+    """Draws precomputed `lines` (see wrap_and_fit) top-down, left-aligned
+    inside `panel` -- text_pool is keyed by line index, same reuse-not-
+    rebuild reasoning as draw_fixed_list/draw_multiline_list."""
+    y = panel.top - line_height
+    for i, line in enumerate(lines):
+        text_pool.get(f"{key_prefix}_{i}", line, panel.left + left_margin, y, color,
+                      font_size=font_size, font_name=FONT_STACK,
+                      anchor_x="left", anchor_y="center").draw()
+        y -= line_height
+
+
 # ---- Fixed-row paged lists ----
 # Retro-RPG-style: rows are a fixed height, one item per row (no word
 # wrap, no variable-height entries), and a list longer than one page flips
@@ -196,7 +252,7 @@ def draw_page_indicator(text_pool: TextPool, key: str, center_x: float, y: float
     current_page = cursor_index // rows_per_page + 1 if total_items > 0 else 1
     total_pages = page_count(total_items, rows_per_page)
     text_pool.get(key, f"Page {current_page}/{total_pages}", center_x, y, color,
-                  font_size=font_size, font_name=FONT_STACK, anchor_x="center").draw()
+                  font_size=font_size, font_name=FONT_STACK, anchor_x="center", anchor_y="center").draw()
 
 
 def draw_fixed_list(panel: Panel, text_pool: TextPool, key_prefix: str, rows: list[str],
@@ -236,11 +292,17 @@ def draw_fixed_list(panel: Panel, text_pool: TextPool, key_prefix: str, rows: li
 def draw_multiline_list(panel: Panel, text_pool: TextPool, key_prefix: str, entries: list[list[str]],
                          cursor_index: int, entries_per_page: int, line_height: float, lines_per_entry: int,
                          font_size: int = 12, left_margin: float = 10, cursor_gap: float = 8,
-                         cursor_glyph_width: float = 18, color=PANEL_COLOR, empty_label: str = "(none)"):
+                         cursor_glyph_width: float = 18, color=PANEL_COLOR, empty_label: str = "(none)",
+                         cursor_line: int = 0, line_indents: list[float] | None = None):
     """Like draw_fixed_list, but each entry is `lines_per_entry` fixed,
-    non-wrapping lines (e.g. a task line, a sender line, a subject line)
-    instead of one -- CP437_CURSOR marks the whole entry, vertically
-    centered across its lines. text_pool is keyed by (slot, line) pairs,
+    non-wrapping lines (e.g. a summary line, a sender line) instead of
+    one -- CP437_CURSOR marks the whole entry, aligned with line
+    `cursor_line` of it (0 = the entry's top line). `line_indents`, if
+    given, is one extra-left-offset-in-pixels per line index (e.g. to
+    indent a sender line under the summary line above it) -- leading
+    spaces in the string itself don't work for this: pyglet's left anchor
+    positions off the first non-space glyph, not the string's start, so
+    it silently ignores them. text_pool is keyed by (slot, line) pairs,
     same reuse-not-rebuild reasoning as draw_fixed_list."""
     if not entries:
         text_pool.get(f"{key_prefix}_empty", empty_label, panel.center_x, panel.center_y, color,
@@ -255,12 +317,13 @@ def draw_multiline_list(panel: Panel, text_pool: TextPool, key_prefix: str, entr
     for slot, lines in enumerate(page_items):
         item_index = page_start + slot
         if item_index == cursor_index:
-            cursor_y = y - line_height * (lines_per_entry - 1) / 2
+            cursor_y = y - line_height * cursor_line
             text_pool.get(f"{key_prefix}_cursor", CP437_CURSOR, panel.left + left_margin, cursor_y, color,
                           font_size=font_size, font_name=FONT_STACK,
                           anchor_x="left", anchor_y="center").draw()
         for line_num, line in enumerate(lines):
-            text_pool.get(f"{key_prefix}_row_{slot}_{line_num}", line, text_x, y, color,
+            indent = line_indents[line_num] if line_indents else 0
+            text_pool.get(f"{key_prefix}_row_{slot}_{line_num}", line, text_x + indent, y, color,
                           font_size=font_size, font_name=FONT_STACK,
                           anchor_x="left", anchor_y="center").draw()
             y -= line_height
@@ -470,10 +533,7 @@ class ThemedBenchView(arcade.View):
         fitting it belongs, not in draw_message()."""
         probe = self.text_pool.get("message", text, 0, 0, color,
                                     font_size=MESSAGE_FONT_SIZE, font_name=FONT_STACK)
-        while probe.content_width > MESSAGE_MAX_WIDTH and len(text) > 1:
-            text = text[:-1]
-            probe.text = text + "..."
-        self.message = probe.text
+        self.message = truncate_to_width(probe, text, MESSAGE_MAX_WIDTH)
         self.message_color = color
         self.message_timer = duration
 

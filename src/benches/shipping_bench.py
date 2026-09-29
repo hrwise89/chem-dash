@@ -11,14 +11,21 @@ Accepting/declining new order offers stays on the computer bench (its
 Offers section) -- this bench is only for fulfilling orders already in
 `window.contract_board.accepted` or `.in_transit`.
 
-Each order is a fixed 2-line entry -- just the type symbol, the chemical
-(short name, "(P)" suffixed if it requires purity), amount, and reward on
-the first line, sender on the second -- not sender/subject/message, which
-only show in the description panel below for whichever entry the cursor
-is on. Both the row list and the description are rebuilt only when they
-can actually change -- entering the bench, switching tabs, moving the
-cursor, or shipping -- not on every draw call, since nothing here changes
-on its own between those moments.
+Each order is a fixed 2-line entry -- type symbol, chemical name ("(P)"
+suffixed if it requires purity), amount, and reward on the first line,
+sender (indented) on the second. The description panel below shows the
+selected order's full message, word-wrapped rather than truncated to one
+line, since it's now tall enough to hold it. Both the row list and the
+description are rebuilt only when they can actually change -- entering
+the bench, switching tabs, moving the cursor, or shipping -- not on every
+draw call, since nothing here changes on its own between those moments.
+
+Fitting text to a width is done with ui_theme.truncate_to_width's binary
+search, never a naive one-character-at-a-time scan -- that scan, run
+against a ~250-character order message every time the cursor moved,
+measured out at 100+ ms on its own (each `.text =` reassignment forces a
+pyglet re-layout), which is what made repeated arrow presses feel like
+they were queuing up instead of responding immediately.
 """
 
 import arcade
@@ -32,6 +39,9 @@ from benches.ui_theme import (
     draw_page_indicator,
     draw_panel,
     draw_tab_bar,
+    draw_wrapped_lines,
+    truncate_to_width,
+    wrap_and_fit,
 )
 from day_manager import calendar_date_string, clock_time_string
 from devtools import logger
@@ -43,20 +53,37 @@ from settings import SCREEN_WIDTH
 # backend doesn't exist yet, so there's nothing real to display for it.
 TABS = [("Open Orders", "open_orders"), ("Awaiting pickup", "in_transit")]
 
-LIST_PANEL = Panel(left=40, right=760, bottom=160, top=480)
 LIST_FONT_SIZE = 10
 LIST_LINE_HEIGHT = 20
 LIST_LINES_PER_ENTRY = 2
 LIST_ENTRY_HEIGHT = LIST_LINE_HEIGHT * LIST_LINES_PER_ENTRY
-# The page indicator lives inside LIST_PANEL now (not below/outside it),
-# so its own line's height is reserved here too, trading a bit of visible
-# rows for not floating a page number outside the content area.
-PAGE_INDICATOR_MARGIN = 26
-ENTRIES_PER_PAGE = max(1, int((LIST_PANEL.height - PAGE_INDICATOR_MARGIN) // LIST_ENTRY_HEIGHT))
-PAGE_INDICATOR_Y = LIST_PANEL.bottom + 12
+LIST_LINE_INDENTS = [0, 20]  # indents the sender line under the summary line above it
 
-DESCRIPTION_PANEL = Panel(left=40, right=760, bottom=100, top=150)
-DESCRIPTION_FONT_SIZE = 12
+ENTRIES_PER_PAGE = 5
+LIST_TOP = 480
+LIST_CONTENT_HEIGHT = ENTRIES_PER_PAGE * LIST_ENTRY_HEIGHT
+# The page indicator lives inside LIST_PANEL (not below/outside it) --
+# LAST_LINE_GAP is the clearance between the last entry's bottom line and
+# the indicator, PAGE_INDICATOR_BOTTOM_MARGIN between the indicator and
+# the panel's own border. The panel is sized to fit exactly
+# ENTRIES_PER_PAGE entries plus both of those -- no more, no less --
+# rather than however many happen to fit a fixed pixel box.
+LAST_LINE_GAP = 24
+PAGE_INDICATOR_BOTTOM_MARGIN = 12
+PAGE_INDICATOR_Y = LIST_TOP - LIST_CONTENT_HEIGHT - LAST_LINE_GAP
+LIST_PANEL = Panel(left=40, right=760, bottom=PAGE_INDICATOR_Y - PAGE_INDICATOR_BOTTOM_MARGIN, top=LIST_TOP)
+
+# Freed up by shrinking LIST_PANEL to only what it needs -- tall enough
+# for a full order message to word-wrap into, instead of being truncated
+# to one line.
+DESCRIPTION_PANEL = Panel(left=40, right=760, bottom=90, top=LIST_PANEL.bottom - 10)
+DESCRIPTION_FONT_SIZE = 10
+DESCRIPTION_LINE_HEIGHT = 20
+DESCRIPTION_MAX_LINES = max(1, int((DESCRIPTION_PANEL.height - 10) // DESCRIPTION_LINE_HEIGHT))
+
+# How long an unfillable-order error stays shown in the description panel
+# (replacing the selected order's message) before reverting to it.
+DESCRIPTION_OVERRIDE_DURATION = 2.5
 
 
 class ShippingBenchView(ThemedBenchView):
@@ -66,33 +93,25 @@ class ShippingBenchView(ThemedBenchView):
         self.mode = "open_orders"
         self.tab_index = 0
         self.cursor_index = 0
-        self.entries = []       # [([line1, line2], contract), ...] for the current tab
-        self.description = ""   # the cursor-selected entry's full message
+        self.entries = []             # [([line1, line2], contract), ...] for the current tab
+        self.description_lines = []   # the cursor-selected entry's word-wrapped full message
+        self.description_override_lines = []
+        self.description_override_timer = 0.0
         self._refresh_rows()
 
     # ---- row/description content (only rebuilt when it can change) ----
 
     def _summary_line(self, contract) -> str:
         purity_tag = " (P)" if contract.requires_purity else ""
-        return (f"[{contract.order_type_letter}] {contract.product_short_name}{purity_tag}  "
-                f"x{contract.amount:.2f}   ${contract.reward:.2f}")
-
-    def _fit_line(self, key: str, text: str, max_width: float, font_size: int) -> str:
-        """One-time (per rebuild) truncation to a single line -- rows are
-        only rebuilt on real state changes (see class docstring), so this
-        cost is paid once per rebuild, not once per frame."""
-        probe = self.text_pool.get(key, text, 0, 0, PANEL_COLOR, font_size=font_size, font_name=FONT_STACK)
-        while probe.content_width > max_width and len(text) > 1:
-            text = text[:-1]
-            probe.text = text + "..."
-        return probe.text
+        return f"[{contract.order_type_letter}] {contract.product}{purity_tag}  {contract.amount:.2f} mol   ${contract.reward:.2f}"
 
     def _entry_lines(self, contract) -> list[str]:
         max_width = LIST_PANEL.width - 60  # leaves room for the cursor glyph + left margin
-        return [
-            self._fit_line("_probe_summary", self._summary_line(contract), max_width, LIST_FONT_SIZE),
-            self._fit_line("_probe_sender", contract.sender, max_width, LIST_FONT_SIZE),
-        ]
+        probe = self.text_pool.get("_probe_row", "", 0, 0, PANEL_COLOR,
+                                    font_size=LIST_FONT_SIZE, font_name=FONT_STACK)
+        summary = truncate_to_width(probe, self._summary_line(contract), max_width - LIST_LINE_INDENTS[0])
+        sender = truncate_to_width(probe, contract.sender, max_width - LIST_LINE_INDENTS[1])
+        return [summary, sender]
 
     def _open_order_description(self, contract) -> str:
         board = self.window.contract_board
@@ -112,23 +131,34 @@ class ShippingBenchView(ThemedBenchView):
 
     def _refresh_description(self):
         if not self.entries:
-            self.description = ""
+            self.description_lines = []
             return
         _, contract = self.entries[self.cursor_index]
         text = (self._open_order_description(contract) if self.mode == "open_orders"
                 else self._in_transit_description(contract))
-        self.description = self._fit_description(text)
+        self.description_lines = self._fit_description(text)
 
-    def _fit_description(self, text: str) -> str:
-        probe = self.text_pool.get("description", text, 0, 0, PANEL_COLOR,
+    def _fit_description(self, text: str) -> list[str]:
+        probe = self.text_pool.get("_probe_description", "", 0, 0, PANEL_COLOR,
                                     font_size=DESCRIPTION_FONT_SIZE, font_name=FONT_STACK)
         max_width = DESCRIPTION_PANEL.width - 20
-        while probe.content_width > max_width and len(text) > 1:
-            text = text[:-1]
-            probe.text = text + "..."
-        return probe.text
+        return wrap_and_fit(probe, text, max_width, DESCRIPTION_MAX_LINES, font_size=DESCRIPTION_FONT_SIZE)
+
+    def _show_description_override(self, text: str):
+        """Briefly replaces the description panel's content with `text`
+        (e.g. an unfillable-order error) instead of the selected order's
+        message -- reverts on its own after DESCRIPTION_OVERRIDE_DURATION."""
+        self.description_override_lines = self._fit_description(text)
+        self.description_override_timer = DESCRIPTION_OVERRIDE_DURATION
 
     # ---- drawing ----
+
+    def on_update(self, delta_time):
+        super().on_update(delta_time)
+        if self.description_override_timer > 0:
+            self.description_override_timer -= delta_time
+            if self.description_override_timer <= 0:
+                self.description_override_lines = []
 
     def on_draw(self):
         self.clear()
@@ -146,20 +176,21 @@ class ShippingBenchView(ThemedBenchView):
         draw_panel(LIST_PANEL)
         draw_multiline_list(LIST_PANEL, self.text_pool, "list", [lines for lines, _ in self.entries],
                              self.cursor_index, ENTRIES_PER_PAGE, LIST_LINE_HEIGHT, LIST_LINES_PER_ENTRY,
-                             font_size=LIST_FONT_SIZE)
+                             font_size=LIST_FONT_SIZE, cursor_line=0, line_indents=LIST_LINE_INDENTS)
         draw_page_indicator(self.text_pool, "page", LIST_PANEL.center_x, PAGE_INDICATOR_Y,
                              self.cursor_index, len(self.entries), ENTRIES_PER_PAGE)
 
         draw_panel(DESCRIPTION_PANEL)
-        if self.description:
-            self.text_pool.get("description", self.description, DESCRIPTION_PANEL.center_x,
-                                DESCRIPTION_PANEL.center_y, PANEL_COLOR, font_size=DESCRIPTION_FONT_SIZE,
-                                font_name=FONT_STACK, anchor_x="center", anchor_y="center").draw()
+        shown_lines = self.description_override_lines or self.description_lines
+        draw_wrapped_lines(DESCRIPTION_PANEL, self.text_pool, "description", shown_lines,
+                            DESCRIPTION_LINE_HEIGHT, font_size=DESCRIPTION_FONT_SIZE)
 
+        # font_size=8, smaller than draw_instructions' own default -- the
+        # full open-orders line runs past the screen edge at font_size=10.
         if self.mode == "open_orders":
-            self.draw_instructions("ARROWS: tabs/browse   ENTER: ship   ESC: leave")
+            self.draw_instructions("L/R Arrow: Tabs   U/D Arrow: Scroll   Enter: Ship   ESC: Leave", font_size=8)
         else:
-            self.draw_instructions("ARROWS: tabs/browse   ESC: leave")
+            self.draw_instructions("L/R Arrow: Tabs   U/D Arrow: Scroll   ESC: Leave", font_size=8)
         self.draw_message()
 
     # ---- input ----
@@ -199,6 +230,7 @@ class ShippingBenchView(ThemedBenchView):
             self.window.contract_board.ship(contract.contract_id, self.window.chemical_inventory)
         except ValueError as e:
             self.show_message(str(e), arcade.color.RED)
+            self._show_description_override(str(e))
             return
         self.cursor_index = 0
         logger.info("Shipped order '%s', $%.2f arriving next morning", contract.subject, contract.reward)

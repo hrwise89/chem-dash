@@ -98,13 +98,19 @@ class TextPool:
 
 
 def wrap_to_width(text: str, max_width: float, font_size: int = 16,
-                   font_name: str | tuple[str, ...] = ("calibri", "arial")) -> list[str]:
+                   font_name: str | tuple[str, ...] = ("calibri", "arial"),
+                   probe: arcade.Text | None = None) -> list[str]:
     """
     Word-wrap `text` into however many lines it takes to keep each one no
-    wider than max_width pixels at font_size, using a scratch arcade.Text to
-    measure (arcade.Text.content_width needs an active window, so this can't
-    be computed without one -- fine here since it's only ever called from
-    on_draw). Returns [text] unchanged if it already fits on one line.
+    wider than max_width pixels at font_size, measuring with `probe` (an
+    existing arcade.Text to reuse) if given, else a scratch one built here
+    (arcade.Text.content_width needs an active window, so this can't be
+    computed without one -- fine when called from on_draw, but a caller
+    that wraps from a cursor-move/rebuild path, not every frame, should
+    pass a pooled probe -- building a fresh pyglet Label costs more than
+    reassigning .text on one that already exists, and a paragraph-length
+    string reassigns it once per word). Returns [text] unchanged if it
+    already fits on one line.
 
     A single word wider than max_width on its own is kept whole rather than
     split mid-word -- rare (a very long chemical name at a narrow width) and
@@ -115,7 +121,12 @@ def wrap_to_width(text: str, max_width: float, font_size: int = 16,
     default, so pass whatever font_name the actual draw call will use or
     this measures against the wrong glyph widths.
     """
-    probe = arcade.Text(text, 0, 0, arcade.color.BLACK, font_size=font_size, font_name=font_name)
+    if probe is None:
+        probe = arcade.Text("", 0, 0, arcade.color.BLACK, font_size=font_size, font_name=font_name)
+    else:
+        probe.font_size = font_size
+        probe.font_name = font_name
+    probe.text = text
     if probe.content_width <= max_width:
         return [text]
 
