@@ -1,5 +1,31 @@
 {
-  "Bulk Solvent (Technical Grade, 95%)": {"bench": ["reaction", "purify"], "unit": "mL", "price": 0.03, "short_name": "Solvent 95%"},
-  "Bulk Solvent (Reagent Grade, 99%)": {"bench": ["reaction", "purify"], "unit": "mL", "price": 0.08, "short_name": "Solvent 99%"},
-  "Silica Gel": {"bench": ["purify"], "unit": "g", "price": 0.08, "short_name": "Silica Gel"}
+  "Bulk Solvent (Technical Grade, 95%)": {
+    "bench": [
+      "reaction",
+      "purify"
+    ],
+    "unit": "mL",
+    "price": 0.03,
+    "short_name": "Solvent 95%",
+    "description": "A cheaper, less pure solvent grade -- fine for washes and general use where trace impurities don't matter."
+  },
+  "Bulk Solvent (Reagent Grade, 99%)": {
+    "bench": [
+      "reaction",
+      "purify"
+    ],
+    "unit": "mL",
+    "price": 0.08,
+    "short_name": "Solvent 99%",
+    "description": "A higher-purity solvent grade for reactions or purifications sensitive to trace impurities."
+  },
+  "Silica Gel": {
+    "bench": [
+      "purify"
+    ],
+    "unit": "g",
+    "price": 0.08,
+    "short_name": "Silica Gel",
+    "description": "The packing material for a chromatography column -- consumed as it separates a mixture."
+  }
 }

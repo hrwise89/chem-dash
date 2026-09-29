@@ -96,7 +96,7 @@ class TestBuildAndApplySaveData(unittest.TestCase):
     def test_round_trips_contract_board_across_all_four_pools(self):
         load_contract_offers(self.window.contract_board, CONTRACTS_PATH)
         contract = self.window.contract_board.available[0]
-        self.window.contract_board.accept(contract.contract_id)
+        self.window.contract_board.accept(contract.contract_id, day_start_time=0.0)
 
         data = build_save_data(self.window, 0, 0)
         fresh = make_window()
@@ -107,8 +107,30 @@ class TestBuildAndApplySaveData(unittest.TestCase):
         self.assertEqual(fresh.contract_board.accepted[0].subject, contract.subject)
 
         # A fresh offer after loading must not collide with a restored id.
-        new_contract = fresh.contract_board.offer("New job", "Test Sender", "Test message", "ethanol", "EtOH", 1.0, 10.0)
+        new_contract = fresh.contract_board.offer("New job", "Test Sender", "Test message", "ethanol", "EtOH",
+                                                    1.0, 10.0, now=0.0, day_start_time=0.0, current_day=1)
         self.assertNotEqual(new_contract.contract_id, contract.contract_id)
+
+    def test_round_trips_rejected_expired_pools_and_sender_stats(self):
+        load_contract_offers(self.window.contract_board, CONTRACTS_PATH)
+        board = self.window.contract_board
+        expired = board.available[0]
+        later = max(c.accept_deadline for c in board.available) + 1.0
+        board.sweep_expirations(now=later)  # expires every starter offer's accept window
+
+        rejected = board.offer("Test job", "Test Sender", "Test message", "ethanol", "EtOH", 1.0, 10.0,
+                                now=later, day_start_time=later, current_day=2)
+        board.reject(rejected.contract_id, now=later, current_day=2)  # within its own recovery window
+
+        data = build_save_data(self.window, 0, 0)
+        fresh = make_window()
+        _apply(fresh, data)
+
+        self.assertEqual([c.contract_id for c in fresh.contract_board.rejected], [rejected.contract_id])
+        self.assertIn(expired.contract_id, [c.contract_id for c in fresh.contract_board.expired])
+        stats = fresh.contract_board.sender_stats
+        self.assertEqual(stats[rejected.sender].rejected_same_day, 1)
+        self.assertEqual(stats[expired.sender].offer_expired, 1)
 
     def test_round_trips_an_in_progress_reaction(self):
         inventory = self.window.chemical_inventory

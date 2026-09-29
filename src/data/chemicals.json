@@ -5,7 +5,8 @@
     "solvent": "water",
     "molarity": 8.8,
     "price_per_unit": 0.12,
-    "short_name": "HBr (aq)"
+    "short_name": "HBr (aq)",
+    "description": "An aqueous HBr solution used to convert alcohols into their bromide counterparts."
   },
   "ethanol": {
     "state": "liquid",
@@ -13,27 +14,31 @@
     "molarity": 17.13,
     "density": 0.79,
     "price_per_unit": 0.03,
-    "short_name": "EtOH"
+    "short_name": "EtOH",
+    "description": "A common solvent and reactant, also the starting material for several bromide/cyanide syntheses."
   },
   "sodium cyanide": {
     "state": "solid",
     "molecular_weight": 49.01,
     "price_per_unit": 0.25,
-    "short_name": "NaCN"
+    "short_name": "NaCN",
+    "description": "A solid cyanide source used to substitute a leaving group and build nitriles."
   },
   "ethyl bromide": {
     "state": "liquid",
     "molecular_weight": 108.97,
     "molarity": 13.4,
     "density": 1.46,
-    "short_name": "EtBr"
+    "short_name": "EtBr",
+    "description": "A reactive alkyl bromide, useful both as a product and as an intermediate for further synthesis."
   },
   "ethyl cyanide": {
     "state": "liquid",
     "molecular_weight": 55.08,
     "molarity": 14.47,
     "density": 0.77,
-    "short_name": "EtCN"
+    "short_name": "EtCN",
+    "description": "A nitrile made by displacing bromide with cyanide -- a common synthesis target."
   },
   "water": {
     "state": "liquid",
@@ -41,12 +46,14 @@
     "molarity": 55.49,
     "density": 1.0,
     "price_per_unit": 0.005,
-    "short_name": "H2O"
+    "short_name": "H2O",
+    "description": "The universal solvent -- used for quenching, washing, and aqueous workups."
   },
   "sodium bromide": {
     "state": "solid",
     "molecular_weight": 102.89,
-    "short_name": "NaBr"
+    "short_name": "NaBr",
+    "description": "A byproduct salt formed when cyanide displaces bromide in a nitrile synthesis."
   },
   "methanol": {
     "state": "liquid",
@@ -54,34 +61,39 @@
     "molarity": 24.72,
     "density": 0.79,
     "price_per_unit": 0.02,
-    "short_name": "MeOH"
+    "short_name": "MeOH",
+    "description": "A small, volatile alcohol -- the starting material for methyl bromide/cyanide syntheses."
   },
   "methyl bromide": {
     "state": "liquid",
     "molecular_weight": 94.94,
     "molarity": 17.69,
     "density": 1.68,
-    "short_name": "MeBr"
+    "short_name": "MeBr",
+    "description": "A volatile alkyl bromide made from methanol -- handle with care."
   },
   "acetonitrile": {
     "state": "liquid",
     "molecular_weight": 41.05,
     "molarity": 19.15,
     "density": 0.79,
-    "short_name": "MeCN"
+    "short_name": "MeCN",
+    "description": "A nitrile solvent and synthesis product, valued for its low water content when pure."
   },
   "propionic acid": {
     "state": "liquid",
     "molecular_weight": 74.08,
     "molarity": 13.34,
     "density": 0.99,
-    "short_name": "EtCOOH"
+    "short_name": "EtCOOH",
+    "description": "A short carboxylic acid used in esterification and general synthesis."
   },
   "ethyl propionate": {
     "state": "liquid",
     "molecular_weight": 102.13,
     "molarity": 8.72,
     "density": 0.89,
-    "short_name": "EtOPr"
+    "short_name": "EtOPr",
+    "description": "A fragrant ester made from propionic acid and ethanol -- prized for flavor work."
   }
 }

@@ -24,7 +24,7 @@ import os
 from dataclasses import asdict
 
 from devtools import logger
-from economy import Contract, ContractBoard
+from economy import Contract, ContractBoard, SenderStats
 from inventory import EquipmentInventory, EquipmentItem
 from reaction_engine import ReactionEngine, ReactionLogEntry, ReactionProcess
 
@@ -61,18 +61,25 @@ def _contract_board_to_dict(board: ContractBoard) -> dict:
     return {
         "available": [asdict(c) for c in board.available],
         "accepted": [asdict(c) for c in board.accepted],
+        "rejected": [asdict(c) for c in board.rejected],
+        "expired": [asdict(c) for c in board.expired],
         "in_transit": [asdict(c) for c in board.in_transit],
         "history": [asdict(c) for c in board.history],
+        "sender_stats": {sender: asdict(stats) for sender, stats in board.sender_stats.items()},
     }
 
 
 def _restore_contract_board(board: ContractBoard, data: dict) -> None:
     board.available = [Contract(**c) for c in data["available"]]
     board.accepted = [Contract(**c) for c in data["accepted"]]
+    board.rejected = [Contract(**c) for c in data.get("rejected", [])]
+    board.expired = [Contract(**c) for c in data.get("expired", [])]
     board.in_transit = [Contract(**c) for c in data["in_transit"]]
     board.history = [Contract(**c) for c in data["history"]]
+    board.sender_stats = {sender: SenderStats(**stats) for sender, stats in data.get("sender_stats", {}).items()}
     all_ids = (c.contract_id for pool in
-               (board.available, board.accepted, board.in_transit, board.history) for c in pool)
+               (board.available, board.accepted, board.rejected, board.expired, board.in_transit, board.history)
+               for c in pool)
     board._id_counter = itertools.count(_max_numeric_suffix(all_ids) + 1)
 
 

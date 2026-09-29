@@ -114,6 +114,8 @@ class ChemicalSpecies:
                                              # the player makes rather than buys)
     short_name: str | None = None           # e.g. "EtOH" -- what a fixed-width list
                                              # row shows; None falls back to `name`
+    description: str = ""                   # the catalogue's description-panel text; "" is
+                                             # rendered as a generic placeholder, not blank
 
     @property
     def display_name(self) -> str:
@@ -319,6 +321,8 @@ class ConsumableCatalogEntry:
     price: float | None = None      # $ per native unit, for the computer bench's catalogue
     unit: str = "unit"
     short_name: str | None = None   # what a fixed-width list row shows; None falls back to `name`
+    description: str = ""           # the catalogue's description-panel text; "" is
+                                     # rendered as a generic placeholder, not blank
 
     @property
     def display_name(self) -> str:
@@ -478,6 +482,8 @@ class EquipmentCatalogEntry:
     price: float | None = None      # $, for the computer bench's catalogue
     capacity: float | None = None
     short_name: str | None = None   # what a fixed-width list row shows; None falls back to `name`
+    description: str = ""           # the catalogue's description-panel text; "" is
+                                     # rendered as a generic placeholder, not blank
 
     @property
     def display_name(self) -> str:

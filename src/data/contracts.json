@@ -10,7 +10,8 @@
     "purity": 100.0,
     "amount": 0.5,
     "reward": 40.0,
-    "short_name": "EtBr Order"
+    "short_name": "EtBr Order",
+    "days_to_complete": 5
   },
   "order_002": {
     "sender": "Chen (Grad Student)",
@@ -23,7 +24,8 @@
     "purity": 100.0,
     "amount": 0.3,
     "reward": 55.0,
-    "short_name": "EtCN Order (pure)"
+    "short_name": "EtCN Order (pure)",
+    "days_to_complete": 0
   },
   "order_003": {
     "sender": "Stockroom",
@@ -36,7 +38,8 @@
     "purity": 100.0,
     "amount": 1.0,
     "reward": 35.0,
-    "short_name": "EtCOOH Order"
+    "short_name": "EtCOOH Order",
+    "days_to_complete": 10
   },
   "order_004": {
     "sender": "Flavor Lab",
@@ -49,7 +52,8 @@
     "purity": 100.0,
     "amount": 0.4,
     "reward": 65.0,
-    "short_name": "EtOPr Order (pure)"
+    "short_name": "EtOPr Order (pure)",
+    "days_to_complete": 2
   },
   "order_005": {
     "sender": "Plastics Workshop",
@@ -62,6 +66,7 @@
     "purity": 100.0,
     "amount": 0.6,
     "reward": 50.0,
-    "short_name": "MeCN Order (pure)"
+    "short_name": "MeCN Order (pure)",
+    "days_to_complete": null
   }
 }

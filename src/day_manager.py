@@ -48,6 +48,13 @@ def clock_time_string(hours_into_day: float) -> str:
     return f"{hour_12}:{minute:02d} {period}"
 
 
+def day_number_for(hours: float) -> int:
+    """The 1-indexed calendar day an absolute GameClock hour (e.g. a
+    Contract's due_date/accept_deadline) falls on -- day 1 covers hours
+    [0, HOURS_PER_CALENDAR_DAY), day 2 the next 24 hours, and so on."""
+    return int(hours // HOURS_PER_CALENDAR_DAY) + 1
+
+
 def calendar_date_string(day_number: int) -> str:
     """DayManager.current_day (1-indexed) -> "MM/DD/YYYY", counting forward
     from CALENDAR_START_DATE."""

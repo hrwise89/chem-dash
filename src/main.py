@@ -39,7 +39,8 @@ def main():
 	# Money + contracts ("orders")
 	window.wallet = Wallet(STARTING_BALANCE)
 	window.contract_board = ContractBoard()
-	load_contract_offers(window.contract_board, "src/data/contracts.json")
+	load_contract_offers(window.contract_board, "src/data/contracts.json", window.game_clock.now(),
+		window.day_manager.day_start_time, window.day_manager.current_day)
 
 	# Reaction engine
 	window.reaction_engine = ReactionEngine("src/data/reactions.json")

@@ -262,6 +262,13 @@ class LabView(arcade.View):
 		# Shipments sent the day before are paid out as the new day starts --
 		# a one-day delay between shipping an order and getting paid for it.
 		paid = self.window.contract_board.process_overnight(self.window.wallet)
+
+		# Contract inbox/accepted-order bookkeeping doesn't advance on its
+		# own between visits -- an overnight jump (go_home/pass_out) is one
+		# of the few points a lot of game_clock time can pass without the
+		# player ever opening the contract inbox to trigger a sweep there,
+		# so it needs its own sweep here too (see ContractBoard.sweep_expirations).
+		self.window.contract_board.sweep_expirations(self.window.game_clock.now())
 		if paid:
 			total = sum(c.reward for c in paid)
 			logger.info("Overnight payments: %s (total $%.2f)", [c.subject for c in paid], total)

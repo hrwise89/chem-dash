@@ -5,6 +5,8 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from economy import (
+    HOURS_PER_DAY,
+    REJECTED_RECOVERY_HOURS,
     Contract,
     ContractBoard,
     InsufficientFundsError,
@@ -134,49 +136,154 @@ class TestContractBoard(unittest.TestCase):
         self.board = ContractBoard()
         self.inventory = ChemicalInventory(species_catalog=SPECIES_CATALOG)
         self.wallet = Wallet(0.0)
+        # Game-start time context (hour 0, day 1's boundary, day 1) -- most
+        # tests don't care about the exact values, just that offer/accept/
+        # reject take them consistently.
+        self.now = 0.0
+        self.day_start = 0.0
+        self.day = 1
+
+    def offer(self, subject="Test job", sender="Test Sender", message="Test message",
+              product="ethyl bromide", product_short_name="EtBr", amount=1.0, reward=20.0,
+              now=None, day_start=None, day=None, **kwargs):
+        return self.board.offer(subject, sender, message, product, product_short_name, amount, reward,
+                                 self.now if now is None else now,
+                                 self.day_start if day_start is None else day_start,
+                                 self.day if day is None else day, **kwargs)
 
     def test_offer_adds_to_available(self):
-        contract = self.board.offer("Test job", "Test Sender", "Test message", "ethyl bromide", "EtBr", 1.0, 20.0)
+        contract = self.offer()
         self.assertIn(contract, self.board.available)
         self.assertIsInstance(contract, Contract)
         self.assertFalse(contract.requires_purity)
 
+    def test_offer_rejects_invalid_days_to_complete(self):
+        with self.assertRaises(ValueError):
+            self.offer(days_to_complete=3)
+
     def test_display_name_falls_back_to_subject_without_a_short_name(self):
-        contract = self.board.offer("Test job", "Test Sender", "Test message", "ethyl bromide", "EtBr", 1.0, 20.0)
+        contract = self.offer(subject="Test job")
         self.assertEqual(contract.display_name, "Test job")
 
     def test_display_name_prefers_short_name_when_set(self):
-        contract = self.board.offer("Test job", "Test Sender", "Test message", "ethyl bromide", "EtBr", 1.0, 20.0,
-                                     short_name="EtBr Order")
+        contract = self.offer(short_name="EtBr Order")
         self.assertEqual(contract.display_name, "EtBr Order")
 
     def test_order_type_defaults_to_synthesis_and_letter_is_its_first_char(self):
-        contract = self.board.offer("Test job", "Test Sender", "Test message", "ethyl bromide", "EtBr", 1.0, 20.0)
+        contract = self.offer()
         self.assertEqual(contract.order_type, "Synthesis")
         self.assertEqual(contract.order_type_letter, "S")
 
     def test_accept_moves_from_available_to_accepted(self):
-        contract = self.board.offer("Test job", "Test Sender", "Test message", "ethyl bromide", "EtBr", 1.0, 20.0)
-        accepted = self.board.accept(contract.contract_id)
+        contract = self.offer()
+        accepted = self.board.accept(contract.contract_id, self.day_start)
         self.assertEqual(accepted, contract)
         self.assertNotIn(contract, self.board.available)
         self.assertIn(contract, self.board.accepted)
 
-    def test_reject_discards_without_accepting(self):
-        contract = self.board.offer("Test job", "Test Sender", "Test message", "ethyl bromide", "EtBr", 1.0, 20.0)
-        self.board.reject(contract.contract_id)
+    def test_reject_moves_to_rejected_not_accepted(self):
+        contract = self.offer()
+        self.board.reject(contract.contract_id, self.now, self.day)
         self.assertNotIn(contract, self.board.available)
         self.assertNotIn(contract, self.board.accepted)
+        self.assertIn(contract, self.board.rejected)
 
     def test_accept_unknown_id_raises(self):
         with self.assertRaises(ValueError):
-            self.board.accept("nope")
+            self.board.accept("nope", self.day_start)
+
+    # --- Rush vs normal acceptance windows ---
+
+    def test_normal_offer_accept_deadline_is_end_of_next_day(self):
+        contract = self.offer(days_to_complete=5)
+        self.assertEqual(contract.accept_deadline, 2 * HOURS_PER_DAY)
+
+    def test_rush_offer_accept_deadline_is_end_of_same_day(self):
+        contract = self.offer(days_to_complete=0)
+        self.assertEqual(contract.accept_deadline, 1 * HOURS_PER_DAY)
+        self.assertTrue(contract.is_rush)
+
+    def test_open_ended_offer_uses_normal_accept_window_and_never_has_a_due_date(self):
+        contract = self.offer(days_to_complete=None)
+        self.assertEqual(contract.accept_deadline, 2 * HOURS_PER_DAY)
+        self.board.accept(contract.contract_id, self.day_start)
+        self.assertIsNone(contract.due_date)
+
+    def test_accept_sets_due_date_from_days_to_complete(self):
+        contract = self.offer(days_to_complete=2)
+        self.board.accept(contract.contract_id, self.day_start)
+        self.assertEqual(contract.due_date, 3 * HOURS_PER_DAY)
+
+    # --- Rejection recovery / expiration sweeping ---
+
+    def test_retrieve_moves_rejected_back_to_available(self):
+        contract = self.offer()
+        self.board.reject(contract.contract_id, self.now, self.day)
+        retrieved = self.board.retrieve(contract.contract_id)
+        self.assertEqual(retrieved, contract)
+        self.assertIn(contract, self.board.available)
+        self.assertNotIn(contract, self.board.rejected)
+        self.assertIsNone(contract.rejected_at)
+
+    def test_retrieve_unknown_id_raises(self):
+        with self.assertRaises(ValueError):
+            self.board.retrieve("nope")
+
+    def test_sweep_expires_rejected_offer_past_recovery_window(self):
+        contract = self.offer()
+        self.board.reject(contract.contract_id, now=0.0, current_day=self.day)
+        self.board.sweep_expirations(now=REJECTED_RECOVERY_HOURS + 0.1)
+        self.assertNotIn(contract, self.board.rejected)
+        self.assertIn(contract, self.board.expired)
+
+    def test_sweep_leaves_rejected_offer_within_recovery_window(self):
+        contract = self.offer()
+        self.board.reject(contract.contract_id, now=0.0, current_day=self.day)
+        self.board.sweep_expirations(now=REJECTED_RECOVERY_HOURS - 0.1)
+        self.assertIn(contract, self.board.rejected)
+
+    def test_sweep_expires_unaccepted_offer_past_its_accept_deadline(self):
+        contract = self.offer(days_to_complete=0)  # Rush -- deadline at end of day 1
+        self.board.sweep_expirations(now=HOURS_PER_DAY + 0.1)
+        self.assertNotIn(contract, self.board.available)
+        self.assertIn(contract, self.board.expired)
+
+    def test_sweep_flags_overdue_accepted_contract_unfulfilled_once(self):
+        contract = self.offer(days_to_complete=0)
+        self.board.accept(contract.contract_id, self.day_start)  # due_date = HOURS_PER_DAY
+        self.board.sweep_expirations(now=HOURS_PER_DAY + 0.1)
+        self.assertIn(contract, self.board.accepted)  # still shippable -- no penalty yet
+        self.assertTrue(contract.unfulfilled_recorded)
+        stats = self.board.sender_stats[contract.sender]
+        self.assertEqual(stats.offer_unfulfilled, 1)
+
+        self.board.sweep_expirations(now=HOURS_PER_DAY + 10.0)
+        self.assertEqual(stats.offer_unfulfilled, 1)  # not double-counted on a later sweep
+
+    # --- Per-sender stats ---
+
+    def test_reject_same_day_vs_next_day_tracked_separately(self):
+        same_day = self.offer(sender="A")
+        self.board.reject(same_day.contract_id, now=1.0, current_day=1)
+        next_day = self.offer(sender="A")
+        self.board.reject(next_day.contract_id, now=30.0, current_day=2)
+
+        stats = self.board.sender_stats["A"]
+        self.assertEqual(stats.rejected_same_day, 1)
+        self.assertEqual(stats.rejected_next_day, 1)
+
+    def test_ship_records_offer_fulfilled_for_sender(self):
+        contract = self.offer(sender="A")
+        self.board.accept(contract.contract_id, self.day_start)
+        self.inventory.add_moles("ethyl bromide", 1.0)
+        self.board.ship(contract.contract_id, self.inventory)
+        self.assertEqual(self.board.sender_stats["A"].offer_fulfilled, 1)
 
     # --- Shipping (consumes product immediately, payment deferred) ---
 
     def test_ship_moves_to_in_transit_and_consumes_product_but_does_not_pay(self):
-        contract = self.board.offer("Test job", "Test Sender", "Test message", "ethyl bromide", "EtBr", 1.0, 20.0)
-        self.board.accept(contract.contract_id)
+        contract = self.offer()
+        self.board.accept(contract.contract_id, self.day_start)
         self.inventory.add_moles("ethyl bromide", 2.0)
 
         shipped = self.board.ship(contract.contract_id, self.inventory)
@@ -187,8 +294,8 @@ class TestContractBoard(unittest.TestCase):
         self.assertAlmostEqual(self.inventory.moles_of("ethyl bromide"), 1.0, places=6)
 
     def test_ship_without_enough_product_raises_and_changes_nothing(self):
-        contract = self.board.offer("Test job", "Test Sender", "Test message", "ethyl bromide", "EtBr", 1.0, 20.0)
-        self.board.accept(contract.contract_id)
+        contract = self.offer()
+        self.board.accept(contract.contract_id, self.day_start)
         self.inventory.add_moles("ethyl bromide", 0.2)
 
         with self.assertRaises(ValueError):
@@ -197,21 +304,21 @@ class TestContractBoard(unittest.TestCase):
         self.assertAlmostEqual(self.inventory.moles_of("ethyl bromide"), 0.2, places=6)
 
     def test_ship_not_accepted_raises(self):
-        contract = self.board.offer("Test job", "Test Sender", "Test message", "ethyl bromide", "EtBr", 1.0, 20.0)
+        contract = self.offer()
         with self.assertRaises(ValueError):
             self.board.ship(contract.contract_id, self.inventory)
 
     def test_crude_order_accepts_crude_product(self):
-        contract = self.board.offer("Crude order", "Test Sender", "Test message", "ethyl bromide", "EtBr", 1.0, 20.0, requires_purity=False)
-        self.board.accept(contract.contract_id)
+        contract = self.offer(subject="Crude order", requires_purity=False)
+        self.board.accept(contract.contract_id, self.day_start)
         self.inventory.add_moles("ethyl bromide (crude)", 1.0)
 
         self.board.ship(contract.contract_id, self.inventory)
         self.assertAlmostEqual(self.inventory.moles_of("ethyl bromide (crude)"), 0.0, places=6)
 
     def test_crude_order_spends_crude_before_pure(self):
-        contract = self.board.offer("Crude order", "Test Sender", "Test message", "ethyl bromide", "EtBr", 1.0, 20.0, requires_purity=False)
-        self.board.accept(contract.contract_id)
+        contract = self.offer(subject="Crude order", requires_purity=False)
+        self.board.accept(contract.contract_id, self.day_start)
         self.inventory.add_moles("ethyl bromide (crude)", 0.4)
         self.inventory.add_moles("ethyl bromide", 1.0)
 
@@ -221,8 +328,8 @@ class TestContractBoard(unittest.TestCase):
         self.assertAlmostEqual(self.inventory.moles_of("ethyl bromide"), 0.4, places=6)
 
     def test_pure_order_rejects_crude_only_stock(self):
-        contract = self.board.offer("Pure order", "Test Sender", "Test message", "ethyl bromide", "EtBr", 1.0, 20.0, requires_purity=True)
-        self.board.accept(contract.contract_id)
+        contract = self.offer(subject="Pure order", requires_purity=True)
+        self.board.accept(contract.contract_id, self.day_start)
         self.inventory.add_moles("ethyl bromide (crude)", 5.0)  # plenty of crude, but it doesn't count
 
         with self.assertRaises(ValueError):
@@ -230,8 +337,8 @@ class TestContractBoard(unittest.TestCase):
         self.assertIn(contract, self.board.accepted)
 
     def test_pure_order_accepts_pure_stock(self):
-        contract = self.board.offer("Pure order", "Test Sender", "Test message", "ethyl bromide", "EtBr", 1.0, 20.0, requires_purity=True)
-        self.board.accept(contract.contract_id)
+        contract = self.offer(subject="Pure order", requires_purity=True)
+        self.board.accept(contract.contract_id, self.day_start)
         self.inventory.add_moles("ethyl bromide", 1.0)
 
         self.board.ship(contract.contract_id, self.inventory)
@@ -240,8 +347,8 @@ class TestContractBoard(unittest.TestCase):
     # --- Overnight payment ---
 
     def test_process_overnight_pays_and_moves_to_history(self):
-        contract = self.board.offer("Test job", "Test Sender", "Test message", "ethyl bromide", "EtBr", 1.0, 20.0)
-        self.board.accept(contract.contract_id)
+        contract = self.offer()
+        self.board.accept(contract.contract_id, self.day_start)
         self.inventory.add_moles("ethyl bromide", 1.0)
         self.board.ship(contract.contract_id, self.inventory)
 
@@ -267,6 +374,7 @@ class TestLoadContractOffers(unittest.TestCase):
             self.assertGreater(contract.amount, 0)
             self.assertGreater(contract.reward, 0)
             self.assertTrue(contract.display_name)  # every starter contract has a short_name
+            self.assertIn(contract.days_to_complete, {0, 2, 5, 10, None})
 
 
 if __name__ == "__main__":

@@ -1,10 +1,62 @@
 {
-  "RB Flask 125 mL": {"type": "rb_flask", "capacity": 125.0, "bench": "reaction", "price": 25.0, "short_name": "RBF 125mL"},
-  "RB Flask 250 mL": {"type": "rb_flask", "capacity": 250.0, "bench": "reaction", "price": 40.0, "short_name": "RBF 250mL"},
-  "RB Flask 500 mL": {"type": "rb_flask", "capacity": 500.0, "bench": "reaction", "price": 70.0, "short_name": "RBF 500mL"},
-  "RB Flask 1 L": {"type": "rb_flask", "capacity": 1000.0, "bench": "reaction", "price": 100.0, "short_name": "RBF 1L"},
-  "Chromatography Column (Micro)": {"type": "chroma_column_micro", "bench": "purify", "price": 60.0, "short_name": "Chroma Col (Micro)"},
-  "Chromatography Column (Bench)": {"type": "chroma_column_bench", "bench": "purify", "price": 150.0, "short_name": "Chroma Col (Bench)"},
-  "Distillation Column (Micro)": {"type": "distill_column_micro", "bench": "purify", "price": 80.0, "short_name": "Distill Col (Micro)"},
-  "Distillation Column (Bench)": {"type": "distill_column_bench", "bench": "purify", "price": 200.0, "short_name": "Distill Col (Bench)"}
+  "RB Flask 125 mL": {
+    "type": "rb_flask",
+    "capacity": 125.0,
+    "bench": "reaction",
+    "price": 25.0,
+    "short_name": "RBF 125mL",
+    "description": "Round bottom flasks are used as reaction vessels -- their rounded shape distributes heat evenly and resists pressure buildup."
+  },
+  "RB Flask 250 mL": {
+    "type": "rb_flask",
+    "capacity": 250.0,
+    "bench": "reaction",
+    "price": 40.0,
+    "short_name": "RBF 250mL",
+    "description": "Round bottom flasks are used as reaction vessels -- their rounded shape distributes heat evenly and resists pressure buildup."
+  },
+  "RB Flask 500 mL": {
+    "type": "rb_flask",
+    "capacity": 500.0,
+    "bench": "reaction",
+    "price": 70.0,
+    "short_name": "RBF 500mL",
+    "description": "Round bottom flasks are used as reaction vessels -- their rounded shape distributes heat evenly and resists pressure buildup."
+  },
+  "RB Flask 1 L": {
+    "type": "rb_flask",
+    "capacity": 1000.0,
+    "bench": "reaction",
+    "price": 100.0,
+    "short_name": "RBF 1L",
+    "description": "Round bottom flasks are used as reaction vessels -- their rounded shape distributes heat evenly and resists pressure buildup."
+  },
+  "Chromatography Column (Micro)": {
+    "type": "chroma_column_micro",
+    "bench": "purify",
+    "price": 60.0,
+    "short_name": "Chroma Col (Micro)",
+    "description": "A packed column that separates a crude mixture by how strongly each component clings to the packing material."
+  },
+  "Chromatography Column (Bench)": {
+    "type": "chroma_column_bench",
+    "bench": "purify",
+    "price": 150.0,
+    "short_name": "Chroma Col (Bench)",
+    "description": "A packed column that separates a crude mixture by how strongly each component clings to the packing material."
+  },
+  "Distillation Column (Micro)": {
+    "type": "distill_column_micro",
+    "bench": "purify",
+    "price": 80.0,
+    "short_name": "Distill Col (Micro)",
+    "description": "A column that separates a crude mixture by boiling point -- lighter components rise and condense first."
+  },
+  "Distillation Column (Bench)": {
+    "type": "distill_column_bench",
+    "bench": "purify",
+    "price": 200.0,
+    "short_name": "Distill Col (Bench)",
+    "description": "A column that separates a crude mixture by boiling point -- lighter components rise and condense first."
+  }
 }

@@ -1,15 +1,30 @@
 """
-Money and contracts ("orders") -- the computer bench's catalogue/contracts
-functions, plus the shipping bench's overnight-fulfillment mechanic. Kept
-arcade-free so it stays headless-testable, like reaction_engine.py/
-inventory.py.
+Money and contracts ("orders") -- the computer bench's contract inbox/
+catalogue functions, plus the shipping bench's overnight-fulfillment
+mechanic. Kept arcade-free (and DayManager-free -- times/days are passed
+in as plain floats/ints) so it stays headless-testable, like
+reaction_engine.py/inventory.py.
 
 A contract's lifecycle:
   available -> accepted -> in_transit -> history
-  (computer bench)  (open order,   (shipping bench:  (paid out
-                      awaiting      product consumed  the following
-                      shipment)     from inventory,   morning --
-                                    payment deferred) see process_overnight)
+      |    \\                (shipping bench:   (paid out
+      |     \\-> rejected     product consumed   the following
+      |          |    \\      from inventory,    morning --
+      |          |     \\--> expired  payment      see process_overnight)
+      |          \\-------->  ^        deferred)
+      \\------------------->  |
+       (unaccepted past      (rejected past its 1-hour
+        its accept_deadline,  recovery window -- see
+        or rejected past      ContractBoard.retrieve)
+        recovery)
+
+`available` = the contract inbox's Inbox tab (accept/reject); `rejected`
+is its Rejected tab (retrieve, within the recovery window, or let it
+expire); `expired` is terminal -- nothing leaves it. sweep_expirations()
+drives the available->expired, rejected->expired, and the
+accepted-but-overdue bookkeeping (see ContractBoard.sweep_expirations);
+call it before reading any of these pools for display, since none of
+these transitions happen on their own between calls.
 """
 
 import itertools
@@ -24,6 +39,19 @@ from inventory import (
     EquipmentInventory,
     crude_name_for,
 )
+
+
+# A contract's days_to_complete: 0 is "Rush" (due the same day it's
+# accepted), 2/5/10 are normal windows, None is "Open Ended" (never
+# expires once accepted). Matches day_manager.HOURS_PER_CALENDAR_DAY, but
+# duplicated as a plain float here rather than importing day_manager --
+# this module stays arcade/DayManager-free so it's headless-testable.
+ALLOWED_DAYS_TO_COMPLETE = {0, 2, 5, 10, None}
+HOURS_PER_DAY = 24.0
+
+# How long a rejected offer stays recoverable (ContractBoard.retrieve())
+# before ContractBoard.sweep_expirations() moves it to `expired` for good.
+REJECTED_RECOVERY_HOURS = 1.0
 
 
 class InsufficientFundsError(Exception):
@@ -136,6 +164,19 @@ class Contract:
     `short_name`, which is the whole *order's* compact label as shown by
     other benches (computer bench's offer list, the reaction bench
     notebook), not just the chemical.
+
+    `days_to_complete` is one of ALLOWED_DAYS_TO_COMPLETE: 0 ("Rush"),
+    2/5/10, or None ("Open Ended", never expires once accepted).
+    `offered_at`/`offered_day` are the game_clock hour and calendar day
+    ContractBoard.offer() created this contract on -- used to compute
+    `accept_deadline` (see offer()) and, at accept() time, `due_date` (the
+    hour by which it must be shipped; None until accepted, and always
+    None for an Open Ended contract). `rejected_at` is the game_clock
+    hour of the most recent reject() (None if never rejected, or after a
+    retrieve()) -- ContractBoard.sweep_expirations() reads it against
+    REJECTED_RECOVERY_HOURS. `unfulfilled_recorded` guards against
+    double-counting a sender's offer_unfulfilled stat across repeated
+    sweeps once a contract has gone overdue.
     """
     contract_id: str
     subject: str
@@ -149,6 +190,13 @@ class Contract:
     purity: float = 100.0
     order_type: str = "Synthesis"
     short_name: str | None = None   # what a fixed-width list row shows; None falls back to `subject`
+    days_to_complete: int | None = None
+    offered_at: float = 0.0
+    offered_day: int = 1
+    accept_deadline: float = 0.0
+    due_date: float | None = None
+    rejected_at: float | None = None
+    unfulfilled_recorded: bool = False
 
     @property
     def display_name(self) -> str:
@@ -157,6 +205,34 @@ class Contract:
     @property
     def order_type_letter(self) -> str:
         return self.order_type[0].upper() if self.order_type else "?"
+
+    @property
+    def is_rush(self) -> bool:
+        return self.days_to_complete == 0
+
+    @property
+    def due_date_label(self) -> str:
+        """A short label for a list row -- "Rush", "Open Ended", or the
+        calendar day number it's due (see day_manager.day_number_for)."""
+        if self.is_rush:
+            return "Rush"
+        if self.days_to_complete is None:
+            return "Open Ended"
+        if self.due_date is None:
+            return f"{self.days_to_complete}d"  # not yet accepted -- no due_date to show a day for
+        return f"Day {int(self.due_date // HOURS_PER_DAY) + 1}"
+
+
+@dataclass
+class SenderStats:
+    """Per-sender/company bookkeeping ContractBoard keeps across every
+    contract that sender has ever offered -- no gameplay penalties read
+    these yet, they're purely tracked data (see module docstring)."""
+    rejected_same_day: int = 0
+    rejected_next_day: int = 0
+    offer_expired: int = 0
+    offer_fulfilled: int = 0
+    offer_unfulfilled: int = 0
 
 
 class ContractBoard:
@@ -169,26 +245,98 @@ class ContractBoard:
     def __init__(self):
         self.available: list[Contract] = []
         self.accepted: list[Contract] = []
+        self.rejected: list[Contract] = []
+        self.expired: list[Contract] = []
         self.in_transit: list[Contract] = []
         self.history: list[Contract] = []
+        self.sender_stats: dict[str, SenderStats] = {}
         self._id_counter = itertools.count(1)
 
+    def _stats_for(self, sender: str) -> SenderStats:
+        return self.sender_stats.setdefault(sender, SenderStats())
+
     def offer(self, subject: str, sender: str, message: str, product: str, product_short_name: str,
-              amount: float, reward: float, requires_purity: bool = False, purity: float = 100.0,
-              order_type: str = "Synthesis", short_name: str | None = None) -> Contract:
+              amount: float, reward: float, now: float, day_start_time: float, current_day: int,
+              requires_purity: bool = False, purity: float = 100.0, order_type: str = "Synthesis",
+              short_name: str | None = None, days_to_complete: int | None = None) -> Contract:
+        """`now`/`day_start_time`/`current_day` are the caller's current
+        game_clock hour, the hour the *current* calendar day started, and
+        that day's number (see day_manager.DayManager) -- used to compute
+        accept_deadline: end of `day_start_time`'s day for a Rush offer
+        (days_to_complete == 0), end of the day after for every other
+        offer (2/5/10/Open Ended alike)."""
+        if days_to_complete not in ALLOWED_DAYS_TO_COMPLETE:
+            raise ValueError(f"days_to_complete must be one of {ALLOWED_DAYS_TO_COMPLETE}, got {days_to_complete!r}")
+        deadline_days = 1 if days_to_complete == 0 else 2
+        accept_deadline = day_start_time + deadline_days * HOURS_PER_DAY
         contract = Contract(f"contract_{next(self._id_counter)}", subject, sender, message, product,
                              product_short_name, amount, reward, requires_purity, purity, order_type,
-                             short_name)
+                             short_name, days_to_complete, now, current_day, accept_deadline)
         self.available.append(contract)
         return contract
 
-    def accept(self, contract_id: str) -> Contract:
+    def accept(self, contract_id: str, day_start_time: float) -> Contract:
+        """day_start_time is the hour the *current* calendar day started
+        -- due_date (None for an Open Ended contract) is the end of the
+        day `days_to_complete` days out from today, e.g. accepting a Rush
+        (0) order due-dates it today; a 2-day order, two days from now."""
         contract = self._remove(self.available, contract_id, "available")
+        if contract.days_to_complete is not None:
+            contract.due_date = day_start_time + (contract.days_to_complete + 1) * HOURS_PER_DAY
         self.accepted.append(contract)
         return contract
 
-    def reject(self, contract_id: str) -> Contract:
-        return self._remove(self.available, contract_id, "available")
+    def reject(self, contract_id: str, now: float, current_day: int) -> Contract:
+        """Moves the offer to `rejected` (recoverable via retrieve() for
+        REJECTED_RECOVERY_HOURS -- see sweep_expirations()) rather than
+        discarding it outright, and records whether this was a same-day
+        or next-day reject against the sender's stats."""
+        contract = self._remove(self.available, contract_id, "available")
+        contract.rejected_at = now
+        self.rejected.append(contract)
+        stats = self._stats_for(contract.sender)
+        if current_day == contract.offered_day:
+            stats.rejected_same_day += 1
+        else:
+            stats.rejected_next_day += 1
+        return contract
+
+    def retrieve(self, contract_id: str) -> Contract:
+        """Moves a still-recoverable rejected offer back to `available`.
+        Raises ValueError if it's not in `rejected` -- including if
+        sweep_expirations() already moved it to `expired`, since a caller
+        should sweep before offering a Retrieve action in the first
+        place."""
+        contract = self._remove(self.rejected, contract_id, "rejected")
+        contract.rejected_at = None
+        self.available.append(contract)
+        return contract
+
+    def sweep_expirations(self, now: float) -> None:
+        """Moves any available offer past its accept_deadline, and any
+        rejected offer past its REJECTED_RECOVERY_HOURS window, to
+        `expired` (incrementing the sender's offer_expired stat either
+        way); also flags any accepted-but-overdue contract's sender stats
+        with offer_unfulfilled, once, the first sweep after its due_date
+        passes -- the contract itself stays in `accepted` and can still
+        be shipped (no gameplay penalty yet, see module docstring). Call
+        this before reading available/rejected/accepted for display --
+        none of these transitions happen on their own between calls."""
+        for contract in list(self.available):
+            if now >= contract.accept_deadline:
+                self.available.remove(contract)
+                self.expired.append(contract)
+                self._stats_for(contract.sender).offer_expired += 1
+        for contract in list(self.rejected):
+            if contract.rejected_at is not None and now - contract.rejected_at >= REJECTED_RECOVERY_HOURS:
+                self.rejected.remove(contract)
+                self.expired.append(contract)
+                self._stats_for(contract.sender).offer_expired += 1
+        for contract in self.accepted:
+            if (contract.due_date is not None and now >= contract.due_date
+                    and not contract.unfulfilled_recorded):
+                contract.unfulfilled_recorded = True
+                self._stats_for(contract.sender).offer_unfulfilled += 1
 
     def available_product_moles(self, contract: Contract, inventory: ChemicalInventory) -> float:
         """How much of `contract`'s product is currently on hand and
@@ -231,6 +379,7 @@ class ContractBoard:
 
         self.accepted.remove(contract)
         self.in_transit.append(contract)
+        self._stats_for(contract.sender).offer_fulfilled += 1
         return contract
 
     def process_overnight(self, wallet: Wallet) -> list[Contract]:
@@ -255,15 +404,21 @@ class ContractBoard:
         return contract
 
 
-def load_contract_offers(board: ContractBoard, path: str) -> None:
+def load_contract_offers(board: ContractBoard, path: str, now: float = 0.0,
+                          day_start_time: float = 0.0, current_day: int = 1) -> None:
     """Seed `board` with the starter contract offers from a JSON file of
     {order_id: {subject, sender, message, product, product_short_name,
-    amount, reward, requires_purity?, purity?, order_type?, short_name?}}
-    -- see src/data/contracts.json."""
+    amount, reward, requires_purity?, purity?, order_type?, short_name?,
+    days_to_complete?}} -- see src/data/contracts.json. `now`/
+    `day_start_time`/`current_day` default to game-start values (hour 0,
+    day 1) since this is normally called right after creating a fresh
+    GameClock/DayManager, before any time has passed -- pass the real
+    current ones if seeding offers later into an already-running game."""
     with open(path, "r") as f:
         data = json.load(f)
     for spec in data.values():
         board.offer(spec["subject"], spec["sender"], spec["message"], spec["product"],
-                    spec["product_short_name"], spec["amount"], spec["reward"],
-                    spec.get("requires_purity", False), spec.get("purity", 100.0),
-                    spec.get("order_type", "Synthesis"), spec.get("short_name"))
+                    spec["product_short_name"], spec["amount"], spec["reward"], now, day_start_time,
+                    current_day, spec.get("requires_purity", False), spec.get("purity", 100.0),
+                    spec.get("order_type", "Synthesis"), spec.get("short_name"),
+                    spec.get("days_to_complete"))

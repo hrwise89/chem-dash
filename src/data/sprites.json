@@ -1,1 +1,5 @@
-{}
+{
+  "rb_flask": "assets/sprites/rb_flask.png",
+  "chroma_column_micro": "assets/sprites/chroma_column.png",
+  "chroma_column_bench": "assets/sprites/chroma_column.png"
+}

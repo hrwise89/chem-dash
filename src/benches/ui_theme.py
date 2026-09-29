@@ -430,6 +430,16 @@ def draw_slider(text_pool: TextPool, key_prefix: str, center_x: float, y: float,
 # unit, highlighted if in use). No game-state knowledge here: callers
 # pass whatever keys/active flags they want shown.
 
+def draw_single_sprite(sprite: arcade.Sprite):
+    """arcade 3.x removed Sprite.draw() -- only a SpriteList can be drawn
+    now, even for a single one-off sprite like an item's icon. This is a
+    real (if small) per-call cost -- fine for the handful of icon panels
+    a screen shows, not something to call from inside a per-row loop."""
+    sprite_list = arcade.SpriteList()
+    sprite_list.append(sprite)
+    sprite_list.draw()
+
+
 ICON_SLOT_MARGIN = 8
 
 
@@ -456,7 +466,7 @@ def draw_icon_slot_row(panel: Panel, count: int, sprite_key_for=lambda i: None,
             sprite = arcade.Sprite(texture, center_x=slot.center_x, center_y=slot.center_y)
             sprite.width = slot_size
             sprite.height = slot_size
-            sprite.draw()
+            draw_single_sprite(sprite)
         else:
             draw_rounded_rect_outline(slot, color, radius=4, border_width=2)
 
@@ -477,7 +487,7 @@ def draw_icon_panel(panel: Panel, sprite_key: str, text_pool: TextPool, key: str
         sprite = arcade.Sprite(texture, center_x=panel.center_x, center_y=panel.center_y)
         sprite.width = max_size
         sprite.height = max_size
-        sprite.draw()
+        draw_single_sprite(sprite)
     elif placeholder_label:
         text_pool.get(key, placeholder_label, panel.center_x, panel.center_y, DIM_COLOR,
                       font_size=placeholder_font_size, font_name=FONT_STACK,
