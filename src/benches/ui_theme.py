@@ -222,6 +222,22 @@ def draw_wrapped_lines(panel: Panel, text_pool: TextPool, key_prefix: str, lines
         y -= line_height
 
 
+def draw_description_panel(panel: Panel, text_pool: TextPool, key_prefix: str, text: str,
+                            font_size: int = 10, line_height: float | None = None, color=PANEL_COLOR):
+    """The other recurring box: a rounded panel with a single blurb of
+    prose, word-wrapped and truncated to whatever fits -- e.g. purify_
+    bench.py's/shipping_bench.py's description panels, and the notebook's
+    (notebook.py) per-item descriptions. One call in place of hand-rolling
+    a probe Text + wrap_and_fit + draw_wrapped_lines with panel-specific
+    margins/line counts each time."""
+    draw_panel(panel)
+    line_height = line_height or font_size * 2.0
+    probe = text_pool.get(f"{key_prefix}_probe", "", 0, 0, color, font_size=font_size, font_name=FONT_STACK)
+    max_lines = max(1, int((panel.height - 10) // line_height))
+    lines = wrap_and_fit(probe, text, panel.width - 20, max_lines, font_size=font_size)
+    draw_wrapped_lines(panel, text_pool, key_prefix, lines, line_height, font_size=font_size, color=color)
+
+
 # ---- Fixed-row paged lists ----
 # Retro-RPG-style: rows are a fixed height, one item per row (no word
 # wrap, no variable-height entries), and a list longer than one page flips
@@ -259,14 +275,17 @@ def draw_fixed_list(panel: Panel, text_pool: TextPool, key_prefix: str, rows: li
                      cursor_index: int, rows_per_page: int, row_height: float,
                      font_size: int = 12, left_margin: float = 10, cursor_gap: float = 8,
                      cursor_glyph_width: float = 18, color=PANEL_COLOR,
-                     empty_label: str = "(none)"):
+                     empty_label: str = "(none)", row_colors: list | None = None):
     """One page (rows_per_page items starting at cursor_index's page) of
     `rows` (already-short, single-line strings -- see inventory.py's/
     economy.py's display_name), each a fixed-height row with CP437_CURSOR
     marking cursor_index. text_pool is keyed by row SLOT (0..rows_per_page-1,
     plus f"{key_prefix}_cursor"), not by item index, so paging or scrolling
     through a long list only ever touches a handful of Text objects,
-    reused/mutated in place rather than rebuilt."""
+    reused/mutated in place rather than rebuilt. row_colors, if given, is
+    one color per entry in `rows` (e.g. green for a reaction that's ready)
+    -- the cursor glyph itself still always draws in `color`, matching
+    every other cursor in the theme."""
     if not rows:
         text_pool.get(f"{key_prefix}_empty", empty_label, panel.center_x, panel.center_y, color,
                       font_size=font_size, font_name=FONT_STACK, anchor_x="center").draw()
@@ -283,10 +302,47 @@ def draw_fixed_list(panel: Panel, text_pool: TextPool, key_prefix: str, rows: li
             text_pool.get(f"{key_prefix}_cursor", CP437_CURSOR, panel.left + left_margin, y, color,
                           font_size=font_size, font_name=FONT_STACK,
                           anchor_x="left", anchor_y="center").draw()
-        text_pool.get(f"{key_prefix}_row_{slot}", label, text_x, y, color,
+        row_color = row_colors[item_index] if row_colors else color
+        text_pool.get(f"{key_prefix}_row_{slot}", label, text_x, y, row_color,
                       font_size=font_size, font_name=FONT_STACK,
                       anchor_x="left", anchor_y="center").draw()
         y -= row_height
+
+
+TITLE_HEADER_HEIGHT = 26
+TITLE_HEADER_FONT_SIZE = 12
+LIST_PAGE_INDICATOR_MARGIN = 16
+
+
+def draw_titled_list_panel(panel: Panel, text_pool: TextPool, key_prefix: str, rows: list[str],
+                            cursor_index: int, row_height: float, title: str | None = None,
+                            font_size: int = 12, color=PANEL_COLOR, empty_label: str = "(none)",
+                            row_colors: list | None = None) -> int:
+    """The recurring "rounded box, dim title across the top, a fixed-row
+    paged list, 'Page X/Y' centered along the bottom" composite -- e.g.
+    purify_bench.py's crude-product picker and every list-with-a-label the
+    notebook (notebook.py) shows. One call in place of hand-assembling
+    draw_panel + a title Text + draw_fixed_list + draw_page_indicator with
+    their own margins each time, so every such box keeps the same title
+    clearance, row spacing, and page-indicator placement without a caller
+    having to re-derive them. Returns rows_per_page (callers need it to
+    move the cursor by a whole page, same as page_count/page_start_for_
+    cursor elsewhere in this module)."""
+    draw_panel(panel)
+    content_top = panel.top
+    if title:
+        text_pool.get(f"{key_prefix}_title", title, panel.center_x, panel.top - TITLE_HEADER_HEIGHT / 2,
+                      DIM_COLOR, font_size=TITLE_HEADER_FONT_SIZE, font_name=FONT_STACK,
+                      anchor_x="center", anchor_y="center").draw()
+        content_top = panel.top - TITLE_HEADER_HEIGHT
+    content_bottom = panel.bottom + LIST_PAGE_INDICATOR_MARGIN * 2
+    content_panel = Panel(panel.left, panel.right, content_bottom, content_top)
+    rows_per_page = max(1, int(content_panel.height // row_height))
+    draw_fixed_list(content_panel, text_pool, key_prefix, rows, cursor_index, rows_per_page, row_height,
+                     font_size=font_size, color=color, empty_label=empty_label, row_colors=row_colors)
+    draw_page_indicator(text_pool, f"{key_prefix}_page", panel.center_x, panel.bottom + LIST_PAGE_INDICATOR_MARGIN,
+                         cursor_index, len(rows), rows_per_page)
+    return rows_per_page
 
 
 def draw_multiline_list(panel: Panel, text_pool: TextPool, key_prefix: str, entries: list[list[str]],

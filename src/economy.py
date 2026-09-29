@@ -223,6 +223,34 @@ class Contract:
         return f"Day {int(self.due_date // HOURS_PER_DAY) + 1}"
 
 
+def order_summary_line(contract: Contract) -> str:
+    """The order's list-row summary line -- shared by any screen that
+    lists orders (the shipping bench, the notebook's read-only Orders
+    view) so they read as one format."""
+    return f"[{contract.order_type_letter}] {contract.subject}"
+
+
+def order_detail_line(contract: Contract) -> str:
+    return f"{contract.sender} - Due: {contract.due_date_label} - ${contract.reward:.2f}"
+
+
+def order_product_desc(contract: Contract) -> str:
+    purity_tag = " (pure)" if contract.requires_purity else ""
+    return f"{contract.amount:.2f} mol {contract.product}{purity_tag}"
+
+
+def open_order_description(contract: Contract, board: "ContractBoard", inventory: ChemicalInventory) -> str:
+    have = board.available_product_moles(contract, inventory)
+    ready = "READY" if have + 1e-9 >= contract.amount else "not enough product yet"
+    return (f"{contract.sender}: {contract.message} (need {order_product_desc(contract)} for "
+            f"${contract.reward:.2f}) [{ready}]")
+
+
+def in_transit_description(contract: Contract) -> str:
+    return (f"{contract.sender}: {contract.message} ({order_product_desc(contract)}, "
+            f"${contract.reward:.2f} arriving next morning)")
+
+
 @dataclass
 class SenderStats:
     """Per-sender/company bookkeeping ContractBoard keeps across every

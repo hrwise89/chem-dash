@@ -203,17 +203,7 @@ class PurifyBenchView(ThemedBenchView):
         return f"{species.display_name}: {moles_str}, {native_str}"
 
     def _crude_description(self, name) -> str:
-        inventory = self.window.chemical_inventory
-        species = inventory.species_for(name)
-        pure_name = species.name  # crude's species entry is shared with its pure form
-        products = self.window.reaction_engine.products_using(pure_name)
-        if products:
-            labels = [inventory.species_for(p).display_name if p in inventory.species_catalog else p
-                      for p in products]
-            used_in = ", ".join(labels)
-        else:
-            used_in = "nothing yet"
-        return f"{species.name.title()}, Used in: {used_in}"
+        return self.window.reaction_engine.used_in_summary(self.window.chemical_inventory, name)
 
     def _refresh_crude_rows(self):
         items = self._crude_items()

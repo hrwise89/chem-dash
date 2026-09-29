@@ -240,6 +240,24 @@ class ReactionEngine:
                 products.extend(definition.products.keys())
         return products
 
+    def used_in_summary(self, inventory: ChemicalInventory, name: str) -> str:
+        """"<Chemical Name>, Used in: <comma-separated product names>" (or
+        "nothing yet") for `name` -- the "what is this good for" blurb
+        every chemical-picking screen shows below its list (purify bench's
+        crude-product picker, the notebook's Active/Known Reactions and
+        Inventory-Reagents views), built once here so they all read as one
+        sentence instead of each screen wording it slightly differently."""
+        species = inventory.species_for(name)
+        pure_name = species.name  # crude's species entry is shared with its pure form
+        products = self.products_using(pure_name)
+        if products:
+            labels = [inventory.species_for(p).display_name if p in inventory.species_catalog else p
+                      for p in products]
+            used_in = ", ".join(labels)
+        else:
+            used_in = "nothing yet"
+        return f"{species.name.title()}, Used in: {used_in}"
+
     def find_match(self, reagents: dict[str, float]) -> tuple[str, ReactionDefinition] | None:
         """
         Check whether the provided reagents match any known reaction.
