@@ -3,8 +3,23 @@ The notebook: a cross-cutting overlay (opened with N, from the lab floor or
 from inside any bench) showing player-wide info -- reactions running,
 inventory, equipment, consumables -- that doesn't belong to one specific
 bench. Composition, not a View: whatever view is showing (LabView or any
-ThemedBenchView) keeps drawing/updating itself underneath, then draws this
-on top if window.notebook.is_open, mirroring door_menu.py's DoorMenu.
+ThemedBenchView) keeps updating itself paused-out-of-frame underneath
+(on_update short-circuits while it's open -- see ThemedBenchView.on_update/
+LabView.on_update), then the notebook draws itself on top if window.
+notebook.is_open, mirroring door_menu.py's DoorMenu composition pattern.
+
+It draws at the same full-screen scale as any bench (status bar, content,
+instructions at the same coordinates ui_theme.py's STATUS_PANEL/
+INSTRUCTIONS_Y already fix for every bench) rather than a smaller inset
+panel -- an earlier version drew it as a shrunken overlay with the bench
+underneath peeking around its edges, but that meant every section's list/
+icon/description panels needed their own smaller, one-off layout numbers
+instead of the exact proven geometry catalogue_bench.py/purify_bench.py/
+shipping_bench.py already use at full scale, which was the direct cause of
+several rows and tab labels overflowing their boxes. A doubled border
+(_draw_frame) drawn just inside the screen edge is the only visual cue
+left that this is the notebook rather than a bench -- everything else
+about its chrome is identical on purpose.
 
 State survives being closed with N (unlike ESC, which also closes it but
 is meant as "leave the notebook" -- both close it the same way here, since
@@ -24,17 +39,26 @@ import arcade
 
 from benches.ui_common import TextPool
 from benches.ui_theme import (
-    CP437_CURSOR, DIM_COLOR, FONT_STACK, PANEL_COLOR, Panel,
+    CP437_CURSOR, DIM_COLOR, FONT_STACK, INSTRUCTIONS_Y, PANEL_COLOR, Panel,
     draw_description_panel, draw_icon_panel, draw_multiline_list, draw_page_indicator,
-    draw_panel, draw_tab_bar, draw_titled_list_panel, truncate_to_width,
+    draw_panel, draw_status_bar, draw_tab_bar, draw_titled_list_panel, truncate_to_width,
 )
-from economy import in_transit_description, open_order_description, order_detail_line, order_summary_line
+from day_manager import calendar_date_string, clock_time_string, day_number_for
+from economy import in_transit_description, open_order_description
+from settings import SCREEN_HEIGHT, SCREEN_WIDTH
 from units import format_moles, format_native_amount
 
 FLASK_SPRITE_KEY = "rb_flask"  # the one generic flask/jar icon, reused everywhere there's no per-item art
 
+# ---- the doubled screen-edge border that's the notebook's whole visual
+# distinction from a bench (see the module docstring) ----
+FRAME_MARGIN = 6
+FRAME_GAP = 4
+FRAME_BORDER_WIDTH = 2
+
 # 2 columns x 3 rows, matching the mockup -- (label, section_key) for a
-# functional panel, (label, None) for a no-op placeholder.
+# functional panel, (label, None) for a no-op placeholder. Full-screen
+# geometry copied from computer_bench.py's own 6-panel grid.
 GRID_COLUMNS = 2
 PANELS = [
     ("Active\nReactions", "active_reactions"),
@@ -44,22 +68,13 @@ PANELS = [
     ("Known\nReactions", "known_reactions"),
     ("Placeholder", None),
 ]
+GRID_LEFT = 40
+GRID_RIGHT = 760
+GRID_TOP = 520
+GRID_BOTTOM = 60
+COLUMN_GAP = 20
+ROW_GAP = 20
 GRID_ROWS = -(-len(PANELS) // GRID_COLUMNS)  # ceil division
-
-# The overlay frame itself: scaled from the mockup image (1536x1152,
-# matching this game's 4:3 800x600 canvas exactly) by 800/1536 = 0.521 --
-# big enough to obscure whatever bench-specific controls sit at the bottom
-# of the screen beneath it, but leaving the shared top status bar (drawn by
-# whatever view is underneath) visible above it, per the mockup.
-NOTEBOOK_PANEL = Panel(left=50, right=750, bottom=40, top=500)
-
-# ---- main grid ----
-GRID_LEFT = NOTEBOOK_PANEL.left + 20
-GRID_RIGHT = NOTEBOOK_PANEL.right - 20
-GRID_TOP = NOTEBOOK_PANEL.top - 20
-GRID_BOTTOM = NOTEBOOK_PANEL.bottom + 40  # leaves room for the instructions line
-COLUMN_GAP = 16
-ROW_GAP = 14
 
 _col_width = (GRID_RIGHT - GRID_LEFT - COLUMN_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS
 _row_height = (GRID_TOP - GRID_BOTTOM - ROW_GAP * (GRID_ROWS - 1)) / GRID_ROWS
@@ -74,43 +89,42 @@ def _panel_rect(index: int) -> Panel:
 
 PANEL_RECTS = [_panel_rect(i) for i in range(len(PANELS))]
 
-# ---- shared content area every drilled-in section draws inside ----
-CONTENT = Panel(left=NOTEBOOK_PANEL.left + 15, right=NOTEBOOK_PANEL.right - 15,
-                 bottom=GRID_BOTTOM, top=NOTEBOOK_PANEL.top - 15)
-
-# ---- Active/Known Reactions: list + icon, (for a running one) time/
-# solvent/ready, the reaction's equation, and a "used in" blurb ----
-REACTION_LIST_PANEL = Panel(CONTENT.left, CONTENT.left + 480, CONTENT.top - 150, CONTENT.top)
-REACTION_ICON_PANEL = Panel(REACTION_LIST_PANEL.right + 15, CONTENT.right,
-                             REACTION_LIST_PANEL.bottom, REACTION_LIST_PANEL.top)
+# ---- Active/Known Reactions: list + icon (purify_bench.py's crude-picker
+# geometry, shrunk a little to leave room for the info band beneath it) --
+# then, for a running reaction, time/solvent/ready, the equation everything
+# in the list is made from, and a "used in" blurb ----
+REACTION_LIST_PANEL = Panel(left=40, right=520, bottom=260, top=520)
+REACTION_ICON_PANEL = Panel(left=540, right=760, bottom=260, top=520)
 REACTION_ROW_HEIGHT = 22
 REACTION_LIST_FONT_SIZE = 10
 REACTION_INFO_FONT_SIZE = 12
-REACTION_INFO_ROW_HEIGHT = 24
-REACTION_DESC_PANEL = Panel(CONTENT.left, CONTENT.right, CONTENT.bottom, CONTENT.bottom + 95)
+REACTION_INFO_ROW_HEIGHT = 22
+REACTION_DESC_PANEL = Panel(left=40, right=760, bottom=90, top=170)
 
-# ---- Orders: tabs + a 2-line-per-entry list (like the shipping bench's
-# own Open Orders/Awaiting pickup view) + description, but read-only ----
+# ---- Orders: tabs + a 2-line-per-entry list (shipping_bench.py's own
+# Open Orders/Awaiting pickup geometry) + description, but read-only ----
 ORDER_TABS = [("Open Orders", "open_orders"), ("Awaiting pickup", "in_transit")]
-ORDERS_TAB_Y = NOTEBOOK_PANEL.top - 32
-ORDERS_LIST_PANEL = Panel(CONTENT.left, CONTENT.right, CONTENT.bottom + 150, CONTENT.top - 45)
+ORDERS_TAB_Y = 505
 ORDERS_LIST_FONT_SIZE = 10
 ORDERS_LIST_LINE_HEIGHT = 20
 ORDERS_LIST_LINES_PER_ENTRY = 2
-ORDERS_LIST_LINE_INDENTS = [0, 20]
-ORDERS_ENTRIES_PER_PAGE = max(1, int(ORDERS_LIST_PANEL.height // (ORDERS_LIST_LINE_HEIGHT * ORDERS_LIST_LINES_PER_ENTRY)))
-ORDERS_PAGE_INDICATOR_Y = ORDERS_LIST_PANEL.bottom + 12
-ORDERS_DESC_PANEL = Panel(CONTENT.left, CONTENT.right, CONTENT.bottom, CONTENT.bottom + 120)
+ORDERS_ENTRIES_PER_PAGE = 5
+ORDERS_LIST_TOP = 480
+_orders_list_content_height = ORDERS_ENTRIES_PER_PAGE * ORDERS_LIST_LINE_HEIGHT * ORDERS_LIST_LINES_PER_ENTRY
+ORDERS_PAGE_INDICATOR_Y = ORDERS_LIST_TOP - _orders_list_content_height - 24
+ORDERS_LIST_PANEL = Panel(left=40, right=760, bottom=ORDERS_PAGE_INDICATOR_Y - 12, top=ORDERS_LIST_TOP)
+ORDERS_DESC_PANEL = Panel(left=40, right=760, bottom=90, top=ORDERS_LIST_PANEL.bottom - 10)
 
-# ---- Inventory: Equipment/Reagents/Consumables tabs, list + icon, desc ----
+# ---- Inventory: Equipment/Reagents/Consumables tabs -- catalogue_bench.
+# py's own buy-screen geometry, verbatim (same tabs, same shape of data:
+# a priced/quantified list + icon + description) ----
 INVENTORY_TABS = ["Equipment", "Reagents", "Consumables"]
-INVENTORY_TAB_Y = NOTEBOOK_PANEL.top - 32
-INVENTORY_LIST_PANEL = Panel(CONTENT.left, CONTENT.left + 480, CONTENT.top - 195, CONTENT.top - 45)
-INVENTORY_ICON_PANEL = Panel(INVENTORY_LIST_PANEL.right + 15, CONTENT.right,
-                              INVENTORY_LIST_PANEL.bottom, INVENTORY_LIST_PANEL.top)
+INVENTORY_TAB_Y = 505
+INVENTORY_LIST_PANEL = Panel(left=40, right=540, bottom=220, top=480)
+INVENTORY_ICON_PANEL = Panel(left=560, right=760, bottom=220, top=480)
 INVENTORY_ROW_HEIGHT = 22
 INVENTORY_LIST_FONT_SIZE = 10
-INVENTORY_DESC_PANEL = Panel(CONTENT.left, CONTENT.right, CONTENT.bottom, INVENTORY_LIST_PANEL.bottom - 15)
+INVENTORY_DESC_PANEL = Panel(left=40, right=760, bottom=90, top=200)
 
 
 def _display_name(inventory, name: str) -> str:
@@ -135,6 +149,41 @@ def _predicted_product(process):
     product_name, stoich = next(iter(process.definition.products.items()))
     efficiency = process.definition.efficiency * process.condition_score
     return product_name, stoich * process.limiting_ratio * efficiency
+
+
+def _order_due_string(contract) -> str:
+    """A contract's due date as an actual calendar date ("03/30/2001")
+    rather than the "5d"/"Day 7" labels Contract.due_date_label shows
+    elsewhere -- economy.py stays DayManager-free (see its own docstring),
+    so this conversion (day_number_for + calendar_date_string) happens
+    here, at the one UI screen that wants the real date instead of a
+    relative label."""
+    if contract.is_rush:
+        return "Rush"
+    if contract.days_to_complete is None:
+        return "Open Ended"
+    if contract.due_date is None:
+        return f"{contract.days_to_complete}d"
+    return calendar_date_string(day_number_for(contract.due_date))
+
+
+def _order_lines(inventory, contract) -> list[str]:
+    """The notebook's own at-a-glance order row -- short chemical name,
+    (P)ure/(C)rude, moles + native amount, reward, and the real due date
+    all in two lines, so it's readable without opening the description.
+    Deliberately not shared with shipping_bench.py's own row builder
+    (economy.order_summary_line/order_detail_line): that screen is an
+    action screen built around ship-this-now, this one's a read-only
+    dashboard, and the two rows want different information front and
+    center."""
+    species = inventory.species_for(contract.product)
+    native_amount = contract.amount / species.moles_per_unit()
+    purity_tag = "P" if contract.requires_purity else "C"
+    line1 = (f"[{contract.order_type_letter}] {contract.product_short_name} ({purity_tag})   "
+             f"{format_moles(contract.amount)}, {format_native_amount(species, native_amount)}   "
+             f"${contract.reward:.2f}")
+    line2 = f"{contract.sender} - Due: {_order_due_string(contract)}"
+    return [line1, line2]
 
 
 class Notebook:
@@ -314,7 +363,13 @@ class Notebook:
     # ---- drawing ----
 
     def draw(self, window):
-        draw_panel(NOTEBOOK_PANEL)
+        arcade.draw_lrbt_rectangle_filled(0, SCREEN_WIDTH, 0, SCREEN_HEIGHT, arcade.color.BLACK)
+        self._draw_frame()
+
+        hours = window.day_manager.hours_into_day(window.game_clock)
+        draw_status_bar(self.text_pool, clock_time_string(hours), f"${window.wallet.balance:.2f}",
+                         calendar_date_string(window.day_manager.current_day))
+
         if self.section is None:
             self._draw_grid()
         elif self.section in ("active_reactions", "known_reactions"):
@@ -324,24 +379,35 @@ class Notebook:
         elif self.section == "inventory":
             self._draw_inventory_section(window)
 
+    def _draw_frame(self):
+        """A doubled border just inside the screen edge -- the notebook's
+        one bit of chrome that's different from a bench, otherwise drawn
+        at the exact same scale (see the module docstring)."""
+        m = FRAME_MARGIN
+        arcade.draw_lrbt_rectangle_outline(m, SCREEN_WIDTH - m, m, SCREEN_HEIGHT - m,
+                                            PANEL_COLOR, border_width=FRAME_BORDER_WIDTH)
+        m2 = m + FRAME_GAP
+        arcade.draw_lrbt_rectangle_outline(m2, SCREEN_WIDTH - m2, m2, SCREEN_HEIGHT - m2,
+                                            PANEL_COLOR, border_width=1)
+
     def _draw_grid(self):
         for i, (label, _) in enumerate(PANELS):
             panel = PANEL_RECTS[i]
             draw_panel(panel)
             color = arcade.color.WHITE if i == self.cursor_index else PANEL_COLOR
             lines = label.split("\n")
-            line_height = 20
-            text_x = panel.left + 36
+            line_height = 22
+            text_x = panel.left + 40
             y = panel.center_y + line_height * (len(lines) - 1) / 2
             for line_num, line in enumerate(lines):
                 self.text_pool.get(f"grid_{i}_{line_num}", line, text_x, y - line_num * line_height,
-                                    color, font_size=13, font_name=FONT_STACK,
+                                    color, font_size=14, font_name=FONT_STACK,
                                     anchor_x="left", anchor_y="center").draw()
             if i == self.cursor_index:
-                self.text_pool.get(f"grid_cursor_{i}", CP437_CURSOR, panel.left + 12, panel.center_y,
-                                    color, font_size=13, font_name=FONT_STACK,
+                self.text_pool.get(f"grid_cursor_{i}", CP437_CURSOR, panel.left + 14, panel.center_y,
+                                    color, font_size=14, font_name=FONT_STACK,
                                     anchor_x="left", anchor_y="center").draw()
-        self._draw_instructions("Arrows: Move Cursor   Enter: Cont.   ESC: Go back")
+        self._draw_instructions("ARROWS: move   ENTER: select   ESC: leave")
 
     def _draw_reaction_section(self, window):
         engine = window.reaction_engine
@@ -382,24 +448,24 @@ class Notebook:
         definition = selected.definition if running else selected
         product_name = _predicted_product(selected)[0] if running else next(iter(selected.products))
 
-        y = REACTION_LIST_PANEL.bottom - 20
+        y = REACTION_LIST_PANEL.bottom - 18
         if running:
             elapsed = min(selected.scheduled_hours, window.game_clock.now() - selected.start_time)
             self.text_pool.get("reaction_time", f"Time: {elapsed:g}/{selected.scheduled_hours:g} Hr",
-                                CONTENT.left, y, PANEL_COLOR, font_size=REACTION_INFO_FONT_SIZE,
+                                REACTION_LIST_PANEL.left, y, PANEL_COLOR, font_size=REACTION_INFO_FONT_SIZE,
                                 font_name=FONT_STACK, anchor_x="left", anchor_y="center").draw()
             self.text_pool.get("reaction_solvent", f"Solvent: {selected.solvent or 'None'}",
-                                CONTENT.left + 280, y, PANEL_COLOR, font_size=REACTION_INFO_FONT_SIZE,
+                                REACTION_LIST_PANEL.left + 280, y, PANEL_COLOR, font_size=REACTION_INFO_FONT_SIZE,
                                 font_name=FONT_STACK, anchor_x="left", anchor_y="center").draw()
             y -= REACTION_INFO_ROW_HEIGHT
             if selected.is_ready(window.game_clock):
-                self.text_pool.get("reaction_ready", "(Ready!)", CONTENT.left, y, arcade.color.GREEN,
+                self.text_pool.get("reaction_ready", "(Ready!)", REACTION_LIST_PANEL.left, y, arcade.color.GREEN,
                                     font_size=REACTION_INFO_FONT_SIZE, font_name=FONT_STACK,
                                     anchor_x="left", anchor_y="center").draw()
                 y -= REACTION_INFO_ROW_HEIGHT
 
-        y -= REACTION_INFO_ROW_HEIGHT * 0.6
-        self.text_pool.get("reaction_equation", _equation_text(inventory, definition), CONTENT.center_x, y,
+        y -= REACTION_INFO_ROW_HEIGHT
+        self.text_pool.get("reaction_equation", _equation_text(inventory, definition), SCREEN_WIDTH / 2, y,
                             PANEL_COLOR, font_size=REACTION_INFO_FONT_SIZE, font_name=FONT_STACK,
                             anchor_x="center", anchor_y="center").draw()
 
@@ -408,15 +474,16 @@ class Notebook:
         self._draw_instructions("Up/Down: Scroll   ESC: Back   N: Close")
 
     def _draw_orders_section(self, window):
-        draw_tab_bar(self.text_pool, "orders_tab", NOTEBOOK_PANEL.center_x, ORDERS_TAB_Y,
+        draw_tab_bar(self.text_pool, "orders_tab", SCREEN_WIDTH / 2, ORDERS_TAB_Y,
                      [label for label, _ in ORDER_TABS], self.orders_tab, spacing=320, font_size=14)
 
         contracts = self._orders_items(window)
-        entries = [self._order_lines(c) for c in contracts]
+        inventory = window.chemical_inventory
+        entries = [_order_lines(inventory, c) for c in contracts]
         draw_panel(ORDERS_LIST_PANEL)
         draw_multiline_list(ORDERS_LIST_PANEL, self.text_pool, "orders_list", entries, self.orders_cursor,
                              ORDERS_ENTRIES_PER_PAGE, ORDERS_LIST_LINE_HEIGHT, ORDERS_LIST_LINES_PER_ENTRY,
-                             font_size=ORDERS_LIST_FONT_SIZE, cursor_line=0, line_indents=ORDERS_LIST_LINE_INDENTS,
+                             font_size=ORDERS_LIST_FONT_SIZE, cursor_line=0, line_indents=[0, 20],
                              empty_label="(no orders)")
         draw_page_indicator(self.text_pool, "orders_page", ORDERS_LIST_PANEL.center_x, ORDERS_PAGE_INDICATOR_Y,
                              self.orders_cursor, len(contracts), ORDERS_ENTRIES_PER_PAGE)
@@ -424,7 +491,7 @@ class Notebook:
         if contracts:
             contract = contracts[self.orders_cursor]
             _, mode = ORDER_TABS[self.orders_tab]
-            description = (open_order_description(contract, window.contract_board, window.chemical_inventory)
+            description = (open_order_description(contract, window.contract_board, inventory)
                             if mode == "open_orders" else in_transit_description(contract))
             draw_description_panel(ORDERS_DESC_PANEL, self.text_pool, "orders_desc", description)
         else:
@@ -432,11 +499,8 @@ class Notebook:
 
         self._draw_instructions("L/R: Tabs   Up/Down: Scroll   ESC: Back   N: Close")
 
-    def _order_lines(self, contract) -> list[str]:
-        return [order_summary_line(contract), order_detail_line(contract)]
-
     def _draw_inventory_section(self, window):
-        draw_tab_bar(self.text_pool, "inv_tab", NOTEBOOK_PANEL.center_x, INVENTORY_TAB_Y,
+        draw_tab_bar(self.text_pool, "inv_tab", SCREEN_WIDTH / 2, INVENTORY_TAB_Y,
                      INVENTORY_TABS, self.inventory_tab, spacing=260, font_size=16)
 
         rows = self._inventory_rows(window)
@@ -457,6 +521,5 @@ class Notebook:
         self._draw_instructions("L/R: Tabs   Up/Down: Scroll   ESC: Back   N: Close")
 
     def _draw_instructions(self, text: str):
-        self.text_pool.get("notebook_instructions", text, NOTEBOOK_PANEL.center_x,
-                            NOTEBOOK_PANEL.bottom + 16, DIM_COLOR, font_size=10,
-                            font_name=FONT_STACK, anchor_x="center", anchor_y="center").draw()
+        self.text_pool.get("notebook_instructions", text, SCREEN_WIDTH / 2, INSTRUCTIONS_Y, DIM_COLOR,
+                            font_size=10, font_name=FONT_STACK, anchor_x="center", anchor_y="center").draw()

@@ -564,6 +564,24 @@ INSTRUCTIONS_Y = 25
 MESSAGE_DURATION = 3.5
 
 
+def draw_status_bar(text_pool: TextPool, time_str: str, money_str: str, date_str: str):
+    """The time/money/date pill every full-screen chrome-using surface
+    shows at the same spot -- a module-level function (not only a
+    ThemedBenchView method) so the notebook overlay (notebook.py), which
+    now draws itself at the same full-screen scale as a bench but isn't a
+    View, can show the identical status bar without duplicating it."""
+    draw_panel(STATUS_PANEL, radius=STATUS_PANEL.height / 2)
+    text_pool.get("status_time", time_str, STATUS_PANEL.left + 30, STATUS_PANEL.center_y,
+                  PANEL_COLOR, font_size=14, font_name=FONT_STACK,
+                  anchor_x="left", anchor_y="center").draw()
+    text_pool.get("status_money", money_str, STATUS_PANEL.center_x, STATUS_PANEL.center_y,
+                  PANEL_COLOR, font_size=14, font_name=FONT_STACK,
+                  anchor_x="center", anchor_y="center").draw()
+    text_pool.get("status_date", date_str, STATUS_PANEL.right - 30, STATUS_PANEL.center_y,
+                  PANEL_COLOR, font_size=14, font_name=FONT_STACK,
+                  anchor_x="right", anchor_y="center").draw()
+
+
 MESSAGE_FONT_SIZE = 11
 MESSAGE_MAX_WIDTH = SCREEN_WIDTH - 80
 
@@ -626,16 +644,7 @@ class ThemedBenchView(arcade.View):
         self.message_timer = duration
 
     def draw_status_bar(self, time_str: str, money_str: str, date_str: str):
-        draw_panel(STATUS_PANEL, radius=STATUS_PANEL.height / 2)
-        self.text_pool.get("status_time", time_str, STATUS_PANEL.left + 30, STATUS_PANEL.center_y,
-                            PANEL_COLOR, font_size=14, font_name=FONT_STACK,
-                            anchor_x="left", anchor_y="center").draw()
-        self.text_pool.get("status_money", money_str, STATUS_PANEL.center_x, STATUS_PANEL.center_y,
-                            PANEL_COLOR, font_size=14, font_name=FONT_STACK,
-                            anchor_x="center", anchor_y="center").draw()
-        self.text_pool.get("status_date", date_str, STATUS_PANEL.right - 30, STATUS_PANEL.center_y,
-                            PANEL_COLOR, font_size=14, font_name=FONT_STACK,
-                            anchor_x="right", anchor_y="center").draw()
+        draw_status_bar(self.text_pool, time_str, money_str, date_str)
 
     def draw_message(self):
         if not self.message:
