@@ -138,7 +138,7 @@ class ReactionsSection:
         if show_message:
             show_message(f"Warped time to {process.end_time:.1f}h", arcade.color.DARK_YELLOW)
 
-    def draw(self, window, text_pool, instructions: str):
+    def draw(self, window, text_pool, instructions: str, title: str | None = None):
         engine = window.reaction_engine
         inventory = window.chemical_inventory
         items = self.items(window)
@@ -161,7 +161,8 @@ class ReactionsSection:
                 product_name = next(iter(item.products))
                 rows.append(truncate_to_width(probe, display_name(inventory, product_name), max_width))
 
-        title = "-Active Reactions-" if self.running else "-Known Reactions-"
+        if title is None:
+            title = "-Active Reactions-" if self.running else "-Known Reactions-"
         draw_titled_list_panel(REACTION_LIST_PANEL, text_pool, "reaction_list", rows, self.cursor,
                                 REACTION_ROW_HEIGHT, title=title, font_size=REACTION_LIST_FONT_SIZE,
                                 row_colors=row_colors, empty_label="(none)")

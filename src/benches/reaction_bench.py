@@ -1,342 +1,372 @@
 """
-The reaction bench: browse your equipment/recipes/inventory, start a
-reaction, and collect it from your notebook once it's ready.
-"""
+The reaction bench: run a known reaction (pick a recipe -> a vessel -> an
+amount, modeled on the purify bench's own pick -> method -> sliders flow),
+collect one once it's ready, and browse equipment/reagents/consumables --
+all through the same 4-panel grid style as the notebook and computer
+bench.
 
+Active Reactions and Inventory are the exact screens the notebook shows
+(see benches/shared_sections.py) -- Active Reactions is also collectible
+here (ENTER collects a ready process; F warps the game clock straight to
+a selected process's end_time, a dev/testing shortcut deliberately left
+out of the on-screen instructions). Start Reaction is new: its first step
+reuses the Known Reactions list-and-detail shape (selectable, rather than
+read-only) to pick a recipe, then a vessel, then an amount via a slider
+with the same held-key auto-repeat purify_bench.py's sliders use.
+
+With only 4 panels (rather than 6), there's room in two of them for a
+small at-a-glance indicator: Active Reactions shows a row of small squares
+(green = ready) for each reaction currently running, and Start Reaction
+shows the player's owned RB flasks, dimmed if in use -- both read straight
+off the same window state the sections themselves use, not a separate
+tracked count.
+"""
 import math
 
 import arcade
 
-from benches.ui_common import LIST_START_Y, BenchView, check_pass_out
-from devtools import logger
-from inventory import EquipmentUnavailableError, bench_for_equipment_type
-from reaction_engine import (
-    reaction_scale_bounds,
-    reagents_for_scale,
-    reference_reagent_for,
+from benches.shared_sections import FLASK_SPRITE_KEY, InventorySection, ReactionsSection, equation_text
+from benches.ui_common import check_pass_out
+from benches.ui_theme import (
+    CP437_CURSOR, DIM_COLOR, FONT_STACK, PANEL_COLOR, Panel, ThemedBenchView,
+    draw_description_panel, draw_panel, draw_single_sprite, draw_slider, draw_titled_list_panel,
+    truncate_to_width,
 )
+from day_manager import calendar_date_string, clock_time_string
+from devtools import logger
+from inventory import EquipmentUnavailableError
+from reaction_engine import reaction_scale_bounds, reagents_for_scale, reference_reagent_for
+from sprites import texture_for
 
-# Placeholder category ordering for equipment rows: vessels first, then
-# everything else alphabetically by type. A real tagging system (the kind
-# that would also group e.g. "generic"/"hardware" equipment together) can
-# replace this later -- for now there's only one vessel type anyway.
-_VESSEL_TYPES = {"rb_flask"}
-
-INDICATOR_SIZE = 20
-INDICATOR_GAP = 8
-INDICATOR_MAX_SHOWN = 8
-
-# The notebook is one bench section with its own tab menu, rather than
-# separate top-level sections -- (tab label, internal mode) pairs.
-NOTEBOOK_TABS = [
-    ("Active Reactions", "notebook_active"),
-    ("Open Orders", "notebook_orders"),
-    ("History", "notebook_history"),
+# ---- main grid: 2x2, more room per panel than the notebook's 2x3 since
+# there are only 4 -- used for the running-reactions/flask indicators ----
+GRID_COLUMNS = 2
+BUTTONS = [
+    ("Active\nReactions", "active_reactions"),
+    ("Start\nReaction", "start_recipe"),
+    ("Inventory", "inventory"),
+    ("Placeholder", None),
 ]
-_SECTION_TITLES = {
-    "notebook_active": "ACTIVE REACTIONS",
-    "notebook_orders": "OPEN ORDERS",
-    "notebook_history": "HISTORY",
-}
+GRID_LEFT = 40
+GRID_RIGHT = 760
+GRID_TOP = 520
+GRID_BOTTOM = 60
+COLUMN_GAP = 20
+ROW_GAP = 20
+GRID_ROWS = -(-len(BUTTONS) // GRID_COLUMNS)
 
-# ---- Amount-picker slider ----
-SLIDER_WIDTH = 500
-SLIDER_HEIGHT = 26
-SLIDER_INITIAL_REPEAT_DELAY = 0.35   # seconds before a held key starts auto-repeating
-SLIDER_MIN_REPEAT_INTERVAL = 0.04    # fastest auto-repeat once fully "held"
-SLIDER_REPEAT_ACCEL = 0.05           # how fast the repeat interval shrinks with hold time
+_col_width = (GRID_RIGHT - GRID_LEFT - COLUMN_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS
+_row_height = (GRID_TOP - GRID_BOTTOM - ROW_GAP * (GRID_ROWS - 1)) / GRID_ROWS
 
 
-class ReactionBenchView(BenchView):
+def _panel_rect(index: int) -> Panel:
+    row, col = divmod(index, GRID_COLUMNS)
+    left = GRID_LEFT + col * (_col_width + COLUMN_GAP)
+    top = GRID_TOP - row * (_row_height + ROW_GAP)
+    return Panel(left=left, right=left + _col_width, bottom=top - _row_height, top=top)
+
+
+PANEL_RECTS = [_panel_rect(i) for i in range(len(BUTTONS))]
+
+INDICATOR_SQUARE_SIZE = 14
+INDICATOR_GAP = 6
+INDICATOR_MAX_SHOWN = 10
+FLASK_ICON_SIZE = 28
+FLASK_ICON_GAP = 8
+FLASK_ICON_MAX_SHOWN = 8
+
+# ---- "start_vessel": pick a free flask ----
+VESSEL_LIST_PANEL = Panel(left=40, right=760, bottom=220, top=520)
+VESSEL_LIST_FONT_SIZE = 9
+VESSEL_ROW_HEIGHT = 24
+
+# ---- "start_amount": one slider, held-repeat identical to purify_bench.
+# py's own (see that module's HOLD_REPEAT_DELAY/HOLD_TRAVERSAL_SECONDS) ----
+HOLD_REPEAT_DELAY = 0.2
+HOLD_TRAVERSAL_SECONDS = 1.0
+HEADER_PANEL = Panel(left=40, right=760, bottom=490, top=535)
+SLIDER_Y = 430
+SLIDER_WIDTH = 420
+SLIDER_HEIGHT = 22
+VALUE_Y = 385
+WARNING_Y = 360
+PREVIEW_PANEL = Panel(left=40, right=760, bottom=90, top=335)
+PREVIEW_LINE_HEIGHT = 18
+PREVIEW_FONT_SIZE = 11
+
+
+class ReactionBenchView(ThemedBenchView):
 
     def __init__(self, window, lab_view):
-        super().__init__(window, lab_view, title="Reaction Bench")
-        # "overview" | "equipment" | "recipes" | "notebook" | "inventory"
-        # | "select_vessel" | "select_amount" | "notebook_active" |
-        # "notebook_orders" | "notebook_history" ("notebook" is a tab menu
-        # over the last three -- see NOTEBOOK_TABS. "select_vessel"/
-        # "select_amount" are the sub-flow for starting a reaction: pick a
-        # recipe -> pick a vessel -> pick an amount. "select_amount" is a
-        # single screen with two rows -- "Max" and a hand-adjustable
-        # slider -- rather than separate screens.)
-        self.mode = "overview"
-        self.sections = ["equipment", "recipes", "notebook", "inventory"]
+        super().__init__(window, lab_view)
+        self.stage = "grid"
+        self.cursor_index = 0
 
-        self.keys_held: set[int] = set()
+        self.active_reactions = ReactionsSection(running=True, collectible=True)
+        self.inventory = InventorySection()
+        self.recipe_section = ReactionsSection(running=False, selectable=True, on_select=self._pick_recipe)
 
-        # State for the recipe-start sub-flow, set as the player moves
-        # through it (definition -> vessel -> amount):
-        self.pending_name = None
+        # Recipe-start sub-flow state, set as the player moves through it
+        # (recipe -> vessel -> amount):
+        self.vessel_cursor = 0
         self.pending_definition = None
         self.pending_vessel = None
         self.pending_min_moles = 0.0
         self.pending_max_moles = 0.0
-        self.pending_max_limiting_factor = None  # "vessel" or a reagent name
+        self.pending_limiting_factor = None
 
-        # Slider-specific state (row 1 of the "select_amount" screen):
         self.slider_value = 0.0
-        self.slider_hold_elapsed = 0.0
-        self.slider_repeat_timer = 0.0
+        self.held_key = None
+        self.held_time = 0.0
+        self._repeat_accum = 0.0
 
-    # ---- what's in each section ----
+    # ---- update ----
 
-    def current_list(self):
-        """(label, underlying_object) pairs for whichever section is active,
-        so drawing and key-handling share one source of truth."""
-        if self.mode == "equipment":
-            return self._equipment_rows()
-
-        if self.mode == "recipes":
-            labels = []
-            for name, definition in self.window.reaction_engine.reaction_db.items():
-                ratio_desc = ", ".join(f"{coeff:.2f} {chem}" for chem, coeff in definition.reactants.items())
-                labels.append((f"{name}  [ratio: {ratio_desc}]", (name, definition)))
-            return labels
-
-        if self.mode == "notebook_active":
-            clock = self.window.game_clock
-            procs = self.window.reaction_engine.active_processes.values()
-            return [(f"{p.reaction_name} ({p.time_remaining(clock):.1f}h left)", p) for p in procs]
-
-        if self.mode == "notebook_orders":
-            board = self.window.contract_board
-            return [(self._open_order_label(c), c) for c in board.accepted]
-
-        if self.mode == "notebook_history":
-            # Most recent first within each kind, so the player's latest
-            # result is the first thing they see when checking what to
-            # expect next time.
-            reaction_rows = [(self._history_label(e), e) for e in reversed(self.window.reaction_engine.history)]
-            order_rows = [(self._order_history_label(c), c) for c in reversed(self.window.contract_board.history)]
-            return reaction_rows + order_rows
-
-        if self.mode == "inventory":
-            inventory = self.window.chemical_inventory
-            return [(f"{name}: {inventory.describe(name)}", name) for name in inventory.contents]
-
-        return []
-
-    def _history_label(self, entry) -> str:
-        solvent_desc = entry.solvent or "no solvent"
-        return (f"[Reaction] {entry.reaction_name} -- {entry.yield_fraction * 100:.0f}% yield "
-                f"(t={entry.start_time:.1f}h, {solvent_desc}, {entry.temperature:.0f}C, {entry.scheduled_hours:.1f}h)")
-
-    def _open_order_label(self, contract) -> str:
-        board = self.window.contract_board
-        have = board.available_product_moles(contract, self.window.chemical_inventory)
-        product_desc = f"pure {contract.product}" if contract.requires_purity else contract.product
-        ready = "ready to ship" if have + 1e-9 >= contract.amount else "not enough product yet"
-        return (f"{contract.subject} -- need {contract.amount:.2f} mol {product_desc} "
-                f"(have {have:.2f} mol) for ${contract.reward:.2f} ({ready})")
-
-    def _order_history_label(self, contract) -> str:
-        product_desc = f"pure {contract.product}" if contract.requires_purity else contract.product
-        return f"[Order] {contract.subject} -- delivered {contract.amount:.2f} mol {product_desc}, paid ${contract.reward:.2f}"
-
-    def _equipment_rows(self):
-        """
-        Group identical equipment (same type + capacity) into one row each,
-        showing counts rather than one line per physical item -- otherwise
-        owning 3 RB flasks means 3 near-identical rows. Sorted vessels
-        (flasks) first, then everything else by type name. Only equipment
-        tagged "reaction" in the shared catalog (src/data/equipment.json)
-        shows up here -- purify-bench equipment (columns) lives in its own
-        bench's supplies screen instead.
-        """
-        equipment_catalog = self.window.equipment_catalog
-        groups = {}  # (type, capacity) -> {"name": str, "available": int, "in_use": int}
-        for item in self.window.equipment_inventory.items.values():
-            if bench_for_equipment_type(equipment_catalog, item.type) != "reaction":
-                continue
-            key = (item.type, item.capacity)
-            group = groups.setdefault(key, {"name": item.name, "available": 0, "in_use": 0})
-            if item.in_use:
-                group["in_use"] += 1
-            else:
-                group["available"] += 1
-
-        def sort_key(key):
-            type_, capacity = key
-            category = 0 if type_ in _VESSEL_TYPES else 1
-            return (category, type_, capacity if capacity is not None else 0.0)
-
-        rows = []
-        for key in sorted(groups.keys(), key=sort_key):
-            type_, capacity = key
-            group = groups[key]
-            capacity_desc = f", {capacity:.0f} mL" if capacity is not None else ""
-            label = (f"{group['name']}{capacity_desc}  —  "
-                     f"available: {group['available']}, in use: {group['in_use']}")
-            rows.append((label, key))
-        return rows
+    def on_update(self, delta_time):
+        super().on_update(delta_time)
+        if self.window.notebook.is_open:
+            return
+        if self.stage != "start_amount" or self.held_key not in (arcade.key.LEFT, arcade.key.RIGHT):
+            return
+        self.held_time += delta_time
+        if self.held_time < HOLD_REPEAT_DELAY:
+            return
+        last = max(1, int(self.pending_max_moles / self.pending_definition.scale_step))
+        steps_per_second = last / HOLD_TRAVERSAL_SECONDS
+        self._repeat_accum += steps_per_second * delta_time
+        steps = int(self._repeat_accum)
+        if steps > 0:
+            self._repeat_accum -= steps
+            direction = -1 if self.held_key == arcade.key.LEFT else 1
+            self._slider_step(direction, steps)
 
     # ---- drawing ----
 
-    def on_update(self, delta_time):
-        super().on_update(delta_time)          # message timer
-        # The slider only responds to a held LEFT/RIGHT while the cursor is
-        # actually sitting on its row (row 1) of the amount screen.
-        if self.mode == "select_amount" and self.cursor_index == 1:
-            self._update_slider_hold(delta_time)
-
-    def on_draw(self):
+    def draw_content(self):
         self.clear()
-        self.draw_bench()
-        self.draw_active_process_indicator()
+        hours = self.window.day_manager.hours_into_day(self.window.game_clock)
+        self.draw_status_bar(
+            clock_time_string(hours),
+            f"${self.window.wallet.balance:.2f}",
+            calendar_date_string(self.window.day_manager.current_day),
+        )
 
-        if self.mode == "overview":
-            self.draw_overview()
-        elif self.mode == "notebook":
-            self.draw_notebook_tabs()
-        elif self.mode == "select_vessel":
-            self.draw_vessel_picker()
-        elif self.mode == "select_amount":
-            self.draw_amount_screen()
-        else:
-            self.draw_section()
+        if self.stage == "grid":
+            self._draw_grid()
+        elif self.stage == "active_reactions":
+            self.active_reactions.draw(self.window, self.text_pool, "Up/Down: Scroll   Enter: Collect   ESC: Back")
+        elif self.stage == "inventory":
+            self.inventory.draw(self.window, self.text_pool, "L/R: Tabs   Up/Down: Scroll   ESC: Back")
+        elif self.stage == "start_recipe":
+            self.recipe_section.draw(self.window, self.text_pool, "Up/Down: Scroll   Enter: Pick   ESC: Back",
+                                      title="-Pick a Recipe-")
+        elif self.stage == "start_vessel":
+            self._draw_vessel_picker()
+        elif self.stage == "start_amount":
+            self._draw_amount_screen()
 
         self.draw_message()
 
-    def draw_active_process_indicator(self):
-        """Placeholder visual: one white square per reaction currently
-        running, along the bottom edge of the bench. Swap for real
-        glassware/animation art later."""
-        count = len(self.window.reaction_engine.active_processes)
-        if count == 0:
+    def _draw_grid(self):
+        for i, (label, _) in enumerate(BUTTONS):
+            panel = PANEL_RECTS[i]
+            draw_panel(panel)
+            color = arcade.color.WHITE if i == self.cursor_index else PANEL_COLOR
+            lines = label.split("\n")
+            line_height = 22
+            text_x = panel.left + 40
+            y = panel.top - 30 - line_height * (len(lines) - 1) / 2
+            for line_num, line in enumerate(lines):
+                self.text_pool.get(f"grid_{i}_{line_num}", line, text_x, y - line_num * line_height,
+                                    color, font_size=16, font_name=FONT_STACK,
+                                    anchor_x="left", anchor_y="center").draw()
+            if i == self.cursor_index:
+                self.text_pool.get(f"grid_cursor_{i}", CP437_CURSOR, panel.left + 14, panel.top - 30,
+                                    color, font_size=16, font_name=FONT_STACK,
+                                    anchor_x="left", anchor_y="center").draw()
+
+            if label.replace("\n", " ") == "Active Reactions":
+                self._draw_active_indicator(panel)
+            elif label.replace("\n", " ") == "Start Reaction":
+                self._draw_flask_indicator(panel)
+
+        self.draw_instructions("ARROWS: move   ENTER: select   ESC: leave")
+
+    def _draw_active_indicator(self, panel: Panel):
+        processes = list(self.window.reaction_engine.active_processes.values())
+        if not processes:
+            self.text_pool.get("active_indicator_label", "(none running)", panel.center_x, panel.bottom + 50,
+                                DIM_COLOR, font_size=11, font_name=FONT_STACK, anchor_x="center").draw()
             return
+        ready_count = sum(1 for p in processes if p.is_ready(self.window.game_clock))
+        self.text_pool.get("active_indicator_label", f"Running: {len(processes)}  Ready: {ready_count}",
+                            panel.center_x, panel.bottom + 60, PANEL_COLOR, font_size=11,
+                            font_name=FONT_STACK, anchor_x="center").draw()
 
-        bench = self.benches[0]
-        shown = min(count, INDICATOR_MAX_SHOWN)
-        total_width = shown * INDICATOR_SIZE + (shown - 1) * INDICATOR_GAP
-        start_x = bench.center_x - total_width / 2 + INDICATOR_SIZE / 2
-        y = bench.center_y - bench.height / 2 + INDICATOR_SIZE / 2 + 12
-
+        shown = min(len(processes), INDICATOR_MAX_SHOWN)
+        total_width = shown * INDICATOR_SQUARE_SIZE + (shown - 1) * INDICATOR_GAP
+        start_x = panel.center_x - total_width / 2 + INDICATOR_SQUARE_SIZE / 2
+        y = panel.bottom + 30
         for i in range(shown):
-            x = start_x + i * (INDICATOR_SIZE + INDICATOR_GAP)
-            arcade.draw_lrbt_rectangle_filled(
-                x - INDICATOR_SIZE / 2, x + INDICATOR_SIZE / 2,
-                y - INDICATOR_SIZE / 2, y + INDICATOR_SIZE / 2,
-                arcade.color.WHITE,
-            )
+            x = start_x + i * (INDICATOR_SQUARE_SIZE + INDICATOR_GAP)
+            color = arcade.color.GREEN if processes[i].is_ready(self.window.game_clock) else PANEL_COLOR
+            half = INDICATOR_SQUARE_SIZE / 2
+            arcade.draw_lrbt_rectangle_filled(x - half, x + half, y - half, y + half, color)
 
-    def draw_overview(self):
-        self.draw_title("Reaction Bench")
-        self.draw_centered_menu([(section, True) for section in self.sections])
-        self.draw_instructions("UP/DOWN to choose, ENTER to select, ESC to leave bench")
+    def _draw_flask_indicator(self, panel: Panel):
+        flasks = [item for item in self.window.equipment_inventory.items.values() if item.type == "rb_flask"]
+        if not flasks:
+            self.text_pool.get("flask_indicator_label", "(no flasks owned)", panel.center_x, panel.bottom + 50,
+                                DIM_COLOR, font_size=11, font_name=FONT_STACK, anchor_x="center").draw()
+            return
+        free = sum(1 for f in flasks if not f.in_use)
+        self.text_pool.get("flask_indicator_label", f"Flasks: {free}/{len(flasks)} free",
+                            panel.center_x, panel.bottom + 60, PANEL_COLOR, font_size=11,
+                            font_name=FONT_STACK, anchor_x="center").draw()
 
-    def draw_notebook_tabs(self):
-        self.draw_title("Notebook")
-        self.draw_centered_menu([(label, True) for label, _ in NOTEBOOK_TABS])
-        self.draw_instructions("UP/DOWN to choose, ENTER to select, ESC to go back")
+        shown = min(len(flasks), FLASK_ICON_MAX_SHOWN)
+        total_width = shown * FLASK_ICON_SIZE + (shown - 1) * FLASK_ICON_GAP
+        start_x = panel.center_x - total_width / 2 + FLASK_ICON_SIZE / 2
+        y = panel.bottom + 30
+        texture = texture_for(FLASK_SPRITE_KEY)
+        for i in range(shown):
+            x = start_x + i * (FLASK_ICON_SIZE + FLASK_ICON_GAP)
+            if texture is None:
+                half = FLASK_ICON_SIZE / 2
+                color = PANEL_COLOR if not flasks[i].in_use else DIM_COLOR
+                arcade.draw_lrbt_rectangle_outline(x - half, x + half, y - half, y + half, color, border_width=2)
+                continue
+            sprite = arcade.Sprite(texture, center_x=x, center_y=y)
+            sprite.width = sprite.height = FLASK_ICON_SIZE
+            if flasks[i].in_use:
+                sprite.alpha = 90
+            draw_single_sprite(sprite)
 
-    def draw_section(self):
-        self.draw_title(_SECTION_TITLES.get(self.mode, self.mode.upper()))
-        items = self.current_list()
-        self.draw_scrollable_list([label for label, _ in items])
+    def _draw_vessel_picker(self):
+        rows = self._vessel_choices()
+        probe = self.text_pool.get("vessel_probe", "", 0, 0, PANEL_COLOR,
+                                    font_size=VESSEL_LIST_FONT_SIZE, font_name=FONT_STACK)
+        max_width = VESSEL_LIST_PANEL.width - 40
+        labels = [truncate_to_width(probe, label, max_width) for label, _ in rows]
+        draw_titled_list_panel(VESSEL_LIST_PANEL, self.text_pool, "vessel_list", labels, self.vessel_cursor,
+                                VESSEL_ROW_HEIGHT, title="-Pick a Vessel-", font_size=VESSEL_LIST_FONT_SIZE,
+                                empty_label="(no free flask available)")
+        self.draw_instructions("Up/Down: Scroll   Enter: Pick   ESC: Back")
 
-        if self.mode == "notebook_active":
-            self.draw_instructions("UP/DOWN to choose, ENTER to collect, F to warp time, ESC to go back")
-        elif self.mode == "recipes":
-            self.draw_instructions("UP/DOWN to choose, ENTER to start, ESC to go back")
-        else:
-            self.draw_instructions("UP/DOWN to browse, ESC to go back")
+    def _draw_amount_screen(self):
+        definition = self.pending_definition
+        inventory = self.window.chemical_inventory
+        draw_panel(HEADER_PANEL)
+        self.text_pool.get("amount_header", equation_text(inventory, definition), HEADER_PANEL.center_x,
+                            HEADER_PANEL.center_y, PANEL_COLOR, font_size=16, font_name=FONT_STACK,
+                            anchor_x="center", anchor_y="center").draw()
+
+        fraction = 0.0 if self.pending_max_moles <= 0 else self.slider_value / self.pending_max_moles
+        ref = reference_reagent_for(definition)
+        native = self._native_amount_desc(ref, self.slider_value)
+        draw_slider(self.text_pool, "amount_slider", 400, SLIDER_Y, SLIDER_WIDTH, SLIDER_HEIGHT, fraction,
+                    min_label="0", max_label=f"{self.pending_max_moles:.2f} mol", label_font_size=11)
+
+        below_min = self.slider_value < self.pending_min_moles
+        value_color = arcade.color.DARK_YELLOW if below_min else PANEL_COLOR
+        self.text_pool.get("amount_value", f"{self.slider_value:.2f} mol {ref} ({native}) selected",
+                            400, VALUE_Y, value_color, font_size=14, font_name=FONT_STACK,
+                            anchor_x="center", anchor_y="center").draw()
+        if below_min:
+            self.text_pool.get("amount_warning", "Below recommended minimum -- yield may suffer",
+                                400, WARNING_Y, arcade.color.DARK_YELLOW, font_size=11, font_name=FONT_STACK,
+                                anchor_x="center", anchor_y="center").draw()
+
+        draw_panel(PREVIEW_PANEL)
+        preview_probe = self.text_pool.get("preview_probe", "", 0, 0, PANEL_COLOR,
+                                            font_size=PREVIEW_FONT_SIZE, font_name=FONT_STACK)
+        max_width = PREVIEW_PANEL.width - 24
+        y = PREVIEW_PANEL.top - PREVIEW_LINE_HEIGHT
+        for i, line in enumerate(self._preview_lines()):
+            if line == "":
+                y -= PREVIEW_LINE_HEIGHT / 2
+                continue
+            line = truncate_to_width(preview_probe, line, max_width)
+            self.text_pool.get(f"preview_{i}", line, PREVIEW_PANEL.left + 12, y, PANEL_COLOR,
+                                font_size=PREVIEW_FONT_SIZE, font_name=FONT_STACK,
+                                anchor_x="left", anchor_y="center").draw()
+            y -= PREVIEW_LINE_HEIGHT
+
+        self.draw_instructions("LEFT/RIGHT: adjust   ENTER: confirm   ESC: back")
 
     # ---- input ----
 
-    def on_key_press(self, key, modifiers):
-        self.keys_held.add(key)
-        if self.mode == "overview":
-            self.handle_overview_keys(key)
-        elif self.mode == "notebook":
-            self.handle_notebook_tab_keys(key)
-        elif self.mode == "select_vessel":
-            self.handle_vessel_keys(key)
-        elif self.mode == "select_amount":
-            self.handle_amount_menu_keys(key)
-        else:
-            self.handle_section_keys(key)
+    def handle_content_keys(self, key, modifiers):
+        if self.stage == "grid":
+            self._handle_grid_keys(key)
+        elif self.stage == "active_reactions":
+            if key == arcade.key.ESCAPE:
+                self.stage = "grid"
+            else:
+                self.active_reactions.handle_key(key, self.window, show_message=self.show_message)
+                if key == arcade.key.F:
+                    check_pass_out(self.window, self.lab_view)
+        elif self.stage == "inventory":
+            if key == arcade.key.ESCAPE:
+                self.stage = "grid"
+            else:
+                self.inventory.handle_key(key, self.window)
+        elif self.stage == "start_recipe":
+            if key == arcade.key.ESCAPE:
+                self.stage = "grid"
+            else:
+                self.recipe_section.handle_key(key, self.window)
+        elif self.stage == "start_vessel":
+            self._handle_vessel_keys(key)
+        elif self.stage == "start_amount":
+            self._handle_amount_keys(key)
 
     def on_key_release(self, key, modifiers):
-        self.keys_held.discard(key)
+        if key == self.held_key:
+            self.held_key = None
 
-    def handle_overview_keys(self, key):
-        if key in (arcade.key.UP, arcade.key.A):
-            self.cursor_index = (self.cursor_index - 1) % len(self.sections)
-        elif key in (arcade.key.DOWN, arcade.key.D):
-            self.cursor_index = (self.cursor_index + 1) % len(self.sections)
-        elif key in (arcade.key.ENTER, arcade.key.SPACE):
-            self.mode = self.sections[self.cursor_index]
-            self.reset_cursor()
-            logger.debug("Reaction bench: entered '%s' section", self.mode)
-        elif key == arcade.key.ESCAPE:
+    def _handle_grid_keys(self, key):
+        if key == arcade.key.ESCAPE:
             logger.debug("Reaction bench: left the bench, returning to lab floor")
             self.window.show_view(self.lab_view)
-
-    def handle_notebook_tab_keys(self, key):
-        if key in (arcade.key.UP, arcade.key.W):
-            self.cursor_index = (self.cursor_index - 1) % len(NOTEBOOK_TABS)
+            return
+        row, col = divmod(self.cursor_index, GRID_COLUMNS)
+        if key in (arcade.key.LEFT, arcade.key.A):
+            col = (col - 1) % GRID_COLUMNS
+        elif key in (arcade.key.RIGHT, arcade.key.D):
+            col = (col + 1) % GRID_COLUMNS
+        elif key in (arcade.key.UP, arcade.key.W):
+            row = (row - 1) % GRID_ROWS
         elif key in (arcade.key.DOWN, arcade.key.S):
-            self.cursor_index = (self.cursor_index + 1) % len(NOTEBOOK_TABS)
-        elif key in (arcade.key.ENTER, arcade.key.SPACE):
-            _, self.mode = NOTEBOOK_TABS[self.cursor_index]
-            self.reset_cursor()
-            logger.debug("Reaction bench: entered notebook tab '%s'", self.mode)
-        elif key == arcade.key.ESCAPE:
-            self.mode = "overview"
-            self.reset_cursor()
+            row = (row + 1) % GRID_ROWS
+        elif key == arcade.key.ENTER:
+            self._activate_grid()
+            return
+        else:
+            return
+        self.cursor_index = row * GRID_COLUMNS + col
 
-    def handle_section_keys(self, key):
-        items = self.current_list()
-        if key in (arcade.key.UP, arcade.key.W) and items:
-            self.cursor_index = (self.cursor_index - 1) % len(items)
-            self.scroll_to_show_cursor()
-        elif key in (arcade.key.DOWN, arcade.key.S) and items:
-            self.cursor_index = (self.cursor_index + 1) % len(items)
-            self.scroll_to_show_cursor()
-        elif key == arcade.key.ENTER and items:
-            self.activate_selected(items[self.cursor_index])
-        elif key == arcade.key.F and self.mode == "notebook_active" and items:
-            _, process = items[self.cursor_index]
-            self.window.game_clock.advance_to(process.end_time)   # "warp to end"
-            logger.info("Warped game clock to t=%.2fh for '%s'", process.end_time, process.reaction_name)
-            if check_pass_out(self.window, self.lab_view):
-                return  # the warp pushed the player past their limit for the day
-            self.show_message(f"Warped time to {process.end_time:.1f}h", arcade.color.DARK_YELLOW)
-        elif key == arcade.key.ESCAPE:
-            if self.mode.startswith("notebook_"):
-                logger.debug("Reaction bench: back to notebook tabs from '%s'", self.mode)
-                self.mode = "notebook"
-            else:
-                logger.debug("Reaction bench: back to overview from '%s'", self.mode)
-                self.mode = "overview"
-            self.reset_cursor()
-
-    def activate_selected(self, selected):
-        _, obj = selected
-        if self.mode == "recipes":
-            name, definition = obj
-            self.begin_recipe_selection(name, definition)
-        elif self.mode == "notebook_active":
-            self.try_collect_reaction(obj)      # obj is a ReactionProcess
-        # "equipment", "inventory", "notebook_orders", and "notebook_history"
-        # are read-only for now -- nothing to activate
+    def _activate_grid(self):
+        _, target = BUTTONS[self.cursor_index]
+        if target is None:
+            return
+        self.stage = target
 
     # ---- recipe-start sub-flow: pick a recipe -> a vessel -> an amount ----
 
-    def begin_recipe_selection(self, name, definition):
+    def _pick_recipe(self, definition):
         if not self.window.equipment_inventory.available_items("rb_flask"):
             self.show_message("No free flask available.", arcade.color.RED)
             return
-        self.pending_name = name
         self.pending_definition = definition
-        self.mode = "select_vessel"
-        self.reset_cursor()
+        self.vessel_cursor = 0
+        self.stage = "start_vessel"
 
-    def vessel_choices(self):
+    def _vessel_choices(self):
         """(label, EquipmentItem) pairs for every free rb_flask, each
         previewing the max reaction scale that vessel would allow (see
         reaction_scale_bounds) so the player can compare vessels before
-        committing to one, instead of finding out only after picking it."""
+        committing to one."""
         definition = self.pending_definition
         inventory = self.window.chemical_inventory
         ref = reference_reagent_for(definition)
@@ -352,65 +382,49 @@ class ReactionBenchView(BenchView):
             rows.append((f"{item.name} ({item.capacity:.0f} mL) -- {preview}", item))
         return rows
 
-    def draw_vessel_picker(self):
-        self.draw_title("PICK A VESSEL")
-        self.draw_scrollable_list([label for label, _ in self.vessel_choices()])
-        self.draw_instructions("UP/DOWN to choose, ENTER to select, ESC to go back")
-
-    def handle_vessel_keys(self, key):
-        items = self.vessel_choices()
-        if key in (arcade.key.UP, arcade.key.W) and items:
-            self.cursor_index = (self.cursor_index - 1) % len(items)
-            self.scroll_to_show_cursor()
-        elif key in (arcade.key.DOWN, arcade.key.S) and items:
-            self.cursor_index = (self.cursor_index + 1) % len(items)
-            self.scroll_to_show_cursor()
-        elif key == arcade.key.ENTER and items:
-            _, vessel = items[self.cursor_index]
+    def _handle_vessel_keys(self, key):
+        rows = self._vessel_choices()
+        if key in (arcade.key.UP, arcade.key.W) and rows:
+            self.vessel_cursor = (self.vessel_cursor - 1) % len(rows)
+        elif key in (arcade.key.DOWN, arcade.key.S) and rows:
+            self.vessel_cursor = (self.vessel_cursor + 1) % len(rows)
+        elif key == arcade.key.ENTER and rows:
+            _, vessel = rows[self.vessel_cursor]
             self._choose_vessel(vessel)
         elif key == arcade.key.ESCAPE:
-            self.mode = "recipes"
-            self.reset_cursor()
+            self.stage = "start_recipe"
 
     def _choose_vessel(self, vessel):
         bounds = reaction_scale_bounds(self.pending_definition, self.window.chemical_inventory, vessel.capacity)
         if bounds is None:
             self.show_message("You don't have the chemicals for this reaction.", arcade.color.RED)
-            self.mode = "recipes"
-            self.reset_cursor()
+            self.stage = "start_recipe"
             return
         self.pending_vessel = vessel
-        self.pending_min_moles, self.pending_max_moles, self.pending_max_limiting_factor = bounds
+        self.pending_min_moles, self.pending_max_moles, self.pending_limiting_factor = bounds
         self._init_slider_value()
-        self.mode = "select_amount"
-        self.reset_cursor()
+        self.stage = "start_amount"
 
-    # ---- the merged Max/Slider amount screen ----
+    # ---- amount screen ----
 
     def _init_slider_value(self):
-        """Sets a sensible starting slider_value when the amount screen is
-        entered, snapped onto the step grid so it could also be reached by
-        stepping left/right from it."""
+        """A sensible starting slider_value, snapped onto the step grid so
+        it could also be reached by stepping left/right from it."""
         step = self.pending_definition.scale_step
         floor = min(step, self.pending_max_moles)
         default = min(1.0, self.pending_max_moles)
         default = math.floor((default / step) + 1e-9) * step
         self.slider_value = max(floor, default)
-        self.slider_hold_elapsed = 0.0
-        self.slider_repeat_timer = 0.0
-
-    def _selected_reference_moles(self) -> float:
-        """The reference-reagent moles implied by whichever row the cursor
-        is currently on -- row 0 (Max) or row 1 (the slider)."""
-        return self.pending_max_moles if self.cursor_index == 0 else self.slider_value
+        self.held_key = None
+        self.held_time = 0.0
+        self._repeat_accum = 0.0
 
     def _native_amount_desc(self, identity: str, moles: float) -> str:
         """'<amount> <unit>' for `moles` of `identity`, using whatever
-        inventory entry currently supplies it (so a solution's own
-        concentration is used, not some other unit) -- or, if nothing
-        supplies it yet (e.g. a product not yet in inventory), the species
-        catalog entry for its own name. Falls back to plain moles if there's
-        no species definition to convert with."""
+        inventory entry currently supplies it -- or, if nothing supplies
+        it yet (e.g. a product not yet in inventory), the species catalog
+        entry for its own name. Falls back to plain moles if there's no
+        species definition to convert with."""
         inventory = self.window.chemical_inventory
         lookup_name = inventory.resolve_supplier(identity) or identity
         try:
@@ -420,172 +434,76 @@ class ReactionBenchView(BenchView):
         amount = moles / species.moles_per_unit()
         return f"{amount:.1f} {species.unit_label()}"
 
-    def _max_row_label(self) -> str:
-        factor = self.pending_max_limiting_factor
-        if factor == "vessel":
-            limit_desc = "limited by vessel volume"
-        else:
-            limit_desc = f"limited by {factor}, {self.pending_max_moles:.2f} mol"
-        return f"Max ({limit_desc})"
-
-    def _slider_row_label(self) -> str:
-        ref = reference_reagent_for(self.pending_definition)
-        native = self._native_amount_desc(ref, self.slider_value)
-        return f"{self.slider_value:.2f} mol {ref}, {native}"
-
-    def _preview_lines(self) -> list[str]:
-        """Reagent amounts (moles + native units, naming whichever actual
-        inventory item supplies each one -- e.g. "HBr as 48% hydrobromic
-        acid" -- with the limiting reagent flagged) and theoretical (100%
-        efficiency, ignoring condition_score) product yield, for whichever
-        amount is currently selected -- Max or the slider. "" entries are
-        blank spacer lines for the caller to render as extra vertical gap
-        rather than text."""
-        definition = self.pending_definition
-        inventory = self.window.chemical_inventory
-        selected = self._selected_reference_moles()
-        reagents = reagents_for_scale(definition, selected)
-
-        lines = ["Reagents"]
-        for name, moles in reagents.items():
-            supplier = inventory.resolve_supplier(name) or name
-            display_name = name if supplier == name else f"{name} as {supplier}"
-            tag = " (limiting)" if name == self.pending_max_limiting_factor else ""
-            native = self._native_amount_desc(name, moles)
-            lines.append(f"{display_name}{tag}: {moles:.2f} mol ({native})")
-
-        lines.append("")
-        lines.append("Product(s)")
-        ref = reference_reagent_for(definition)
-        ref_coeff = definition.reactants[ref]
-        scale = selected / ref_coeff if ref_coeff else 0.0
-        for product, stoich in definition.products.items():
-            moles = stoich * scale
-            native = self._native_amount_desc(product, moles)
-            lines.append(f"{product} (theoretical): {moles:.2f} mol ({native})")
-        return lines
-
-    def draw_amount_screen(self):
-        self.draw_title(self.pending_name or "PICK AN AMOUNT")
-        self.draw_centered_menu([(self._max_row_label(), True), (self._slider_row_label(), True)])
-
-        center_x = self.title_text.x
-        bar_y = LIST_START_Y - 2 * 40 - 30
-        left = center_x - SLIDER_WIDTH / 2
-        right = center_x + SLIDER_WIDTH / 2
-        bottom = bar_y - SLIDER_HEIGHT / 2
-        top = bar_y + SLIDER_HEIGHT / 2
-
-        selected = self._selected_reference_moles()
-        fraction = 0.0 if self.pending_max_moles <= 0 else selected / self.pending_max_moles
-        fraction = max(0.0, min(1.0, fraction))
-        fill_x = left + SLIDER_WIDTH * fraction
-
-        arcade.draw_lrbt_rectangle_outline(left, right, bottom, top, arcade.color.BLACK, border_width=2)
-        if fraction > 0:
-            arcade.draw_lrbt_rectangle_filled(left, fill_x, bottom, top, arcade.color.ORANGE)
-
-        for tick_fraction in (0.25, 0.5, 0.75):
-            tick_x = left + SLIDER_WIDTH * tick_fraction
-            arcade.draw_line(tick_x, bottom - 4, tick_x, top + 4, arcade.color.GRAY, 1)
-
-        if self.pending_max_moles > 0:
-            min_fraction = max(0.0, min(1.0, self.pending_min_moles / self.pending_max_moles))
-            min_x = left + SLIDER_WIDTH * min_fraction
-            arcade.draw_line(min_x, bottom - 8, min_x, top + 8, arcade.color.DARK_YELLOW, 2)
-
-        arcade.draw_line(fill_x, bottom - 8, fill_x, top + 8, arcade.color.RED, 3)
-
-        below_min = selected < self.pending_min_moles
-        value_color = arcade.color.DARK_YELLOW if below_min else arcade.color.BLACK
-        self.text_pool.get("amount_selected", f"{selected:.2f} mol selected  (max {self.pending_max_moles:.2f} mol)",
-            center_x, bar_y - 34, value_color, font_size=16, anchor_x="center").draw()
-
-        if below_min:
-            self.text_pool.get("below_min_warning", "Below recommended minimum -- yield may suffer",
-                center_x, bar_y - 56, arcade.color.DARK_YELLOW, font_size=13, anchor_x="center").draw()
-
-        preview_y = bar_y - 56 - (22 if below_min else 0) - 20
-        for i, line in enumerate(self._preview_lines()):
-            if line == "":
-                preview_y -= 10
-                continue
-            is_header = line in ("Reagents", "Product(s)")
-            color = arcade.color.DARK_BLUE if is_header else arcade.color.BLACK
-            font_size = 15 if is_header else 14
-            self.text_pool.get(f"preview_line_{i}", line, center_x, preview_y,
-                color, font_size=font_size, anchor_x="center").draw()
-            preview_y -= 22
-
-        self.draw_instructions(
-            "UP/DOWN to choose Max/Slider, LEFT/RIGHT to adjust slider, ENTER to confirm, ESC to go back")
-
-    def handle_amount_menu_keys(self, key):
-        if key in (arcade.key.UP, arcade.key.W):
-            self.cursor_index = (self.cursor_index - 1) % 2
-        elif key in (arcade.key.DOWN, arcade.key.S):
-            self.cursor_index = (self.cursor_index + 1) % 2
-        elif key == arcade.key.LEFT and self.cursor_index == 1:
-            self._slider_step(-1)
-            self.slider_hold_elapsed = 0.0
-            self.slider_repeat_timer = SLIDER_INITIAL_REPEAT_DELAY
-        elif key == arcade.key.RIGHT and self.cursor_index == 1:
-            self._slider_step(1)
-            self.slider_hold_elapsed = 0.0
-            self.slider_repeat_timer = SLIDER_INITIAL_REPEAT_DELAY
-        elif key == arcade.key.ENTER:
-            self._confirm_amount(self._selected_reference_moles())
-        elif key == arcade.key.ESCAPE:
-            self.mode = "select_vessel"
-            self.reset_cursor()
-
     def _slider_grid_max(self) -> float:
-        """The largest value that's an exact multiple of the recipe's
-        scale_step and still <= pending_max_moles -- the slider's last
-        "nice" stop before a final fractional jump up to the true max."""
         step = self.pending_definition.scale_step
         return math.floor((self.pending_max_moles / step) + 1e-9) * step
 
-    def _slider_step(self, direction: int):
+    def _slider_step(self, direction: int, count: int = 1):
+        for _ in range(count):
+            self._slider_step_once(direction)
+
+    def _slider_step_once(self, direction: int):
         step = self.pending_definition.scale_step
         floor = min(step, self.pending_max_moles)
         grid_max = self._slider_grid_max()
-
         if direction > 0:
             if self.slider_value >= grid_max - 1e-9:
-                new_value = self.pending_max_moles  # final fractional jump to the true max
+                self.slider_value = self.pending_max_moles  # final fractional jump to the true max
             else:
-                new_value = min(self.slider_value + step, grid_max)
+                self.slider_value = min(self.slider_value + step, grid_max)
         else:
             if self.slider_value > grid_max + 1e-9:
-                new_value = grid_max  # drop off the fractional top step onto the grid
+                self.slider_value = grid_max  # drop off the fractional top step onto the grid
             else:
-                new_value = max(self.slider_value - step, floor)
+                self.slider_value = max(self.slider_value - step, floor)
 
-        self.slider_value = new_value
-
-    def _update_slider_hold(self, delta_time):
-        direction = 0
-        if arcade.key.LEFT in self.keys_held:
-            direction -= 1
-        if arcade.key.RIGHT in self.keys_held:
-            direction += 1
-        if direction == 0:
-            self.slider_hold_elapsed = 0.0
-            self.slider_repeat_timer = 0.0
-            return
-
-        self.slider_hold_elapsed += delta_time
-        self.slider_repeat_timer -= delta_time
-        if self.slider_repeat_timer <= 0:
-            self._slider_step(direction)
-            interval = max(SLIDER_MIN_REPEAT_INTERVAL,
-                            SLIDER_INITIAL_REPEAT_DELAY - self.slider_hold_elapsed * SLIDER_REPEAT_ACCEL)
-            self.slider_repeat_timer = interval
-
-    def _confirm_amount(self, reference_moles: float):
+    def _preview_lines(self) -> list[str]:
+        """Reagent amounts (moles + native units, naming whichever actual
+        inventory item supplies each one, with the limiting reagent
+        flagged) and theoretical (100% efficiency) product yield -- the
+        "at a glance" info for whatever amount the slider is currently at."""
         definition = self.pending_definition
-        reagents = reagents_for_scale(definition, reference_moles)
+        inventory = self.window.chemical_inventory
+        reagents = reagents_for_scale(definition, self.slider_value)
+
+        lines = ["Reagents:"]
+        for name, moles in reagents.items():
+            supplier = inventory.resolve_supplier(name) or name
+            display = name if supplier == name else f"{name} as {supplier}"
+            tag = " (limiting)" if name == self.pending_limiting_factor else ""
+            native = self._native_amount_desc(name, moles)
+            lines.append(f"  {display}{tag}: {moles:.2f} mol ({native})")
+
+        lines.append("")
+        lines.append("Product(s) (theoretical):")
+        ref = reference_reagent_for(definition)
+        ref_coeff = definition.reactants[ref]
+        scale = self.slider_value / ref_coeff if ref_coeff else 0.0
+        for product, stoich in definition.products.items():
+            moles = stoich * scale
+            native = self._native_amount_desc(product, moles)
+            lines.append(f"  {product}: {moles:.2f} mol ({native})")
+        return lines
+
+    def _handle_amount_keys(self, key):
+        if key == arcade.key.LEFT:
+            self._slider_step(-1)
+            self.held_key = arcade.key.LEFT
+            self.held_time = 0.0
+            self._repeat_accum = 0.0
+        elif key == arcade.key.RIGHT:
+            self._slider_step(1)
+            self.held_key = arcade.key.RIGHT
+            self.held_time = 0.0
+            self._repeat_accum = 0.0
+        elif key == arcade.key.ENTER:
+            self._confirm_amount()
+        elif key == arcade.key.ESCAPE:
+            self.stage = "start_vessel"
+
+    def _confirm_amount(self):
+        definition = self.pending_definition
+        reagents = reagents_for_scale(definition, self.slider_value)
         try:
             self.window.reaction_engine.start_reaction(
                 inventory=self.window.chemical_inventory,
@@ -598,30 +516,9 @@ class ReactionBenchView(BenchView):
                 preferred_flask_id=self.pending_vessel.id,
                 skills=self.window.player_skills,
             )
-            self.mode = "notebook_active"
-            self.reset_cursor()
+            logger.info("Reaction bench: started a reaction for %.2f mol reference reagent", self.slider_value)
             self.show_message("Reaction started.", arcade.color.DARK_GREEN)
+            self.stage = "grid"
         except (ValueError, EquipmentUnavailableError) as e:
-            self.mode = "recipes"
-            self.reset_cursor()
             self.show_message(str(e), arcade.color.RED)
-
-    def try_collect_reaction(self, process):
-        clock = self.window.game_clock
-        if not process.is_ready(clock):
-            # Checked here (rather than just calling collect_reaction and
-            # catching ReactionNotReadyError) so the engine never has to
-            # raise for a state the UI can trivially see coming -- but that
-            # also means the engine's own logging never fires for this
-            # case, so log it here instead.
-            logger.debug("Reaction bench: '%s' not ready (%.2fh remaining)",
-                          process.reaction_name, process.time_remaining(clock))
-            self.show_message(f"Not ready yet: {process.time_remaining(clock):.1f}h remaining",
-                arcade.color.DARK_YELLOW)
-            return
-        products = self.window.reaction_engine.collect_reaction(
-            process.process_id, self.window.chemical_inventory,
-            self.window.equipment_inventory, clock,
-        )
-        summary = ", ".join(f"{amt:.2f} mol {name}" for name, amt in products.items())
-        self.show_message(f"Collected: {summary}", arcade.color.DARK_GREEN)
+            self.stage = "start_recipe"
