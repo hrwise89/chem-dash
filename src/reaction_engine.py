@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 
 from devtools import logger
 from game_clock import GameClock
-from inventory import ChemicalInventory, EquipmentInventory, EquipmentUnavailableError
+from inventory import ChemicalInventory, EquipmentInventory, EquipmentUnavailableError, is_crude
 from skills import SYNTHESIS, synthesis_yield_bonus
 
 # Re-exported for convenience / backwards compatibility with code that used
@@ -241,12 +241,18 @@ class ReactionEngine:
         return products
 
     def used_in_summary(self, inventory: ChemicalInventory, name: str) -> str:
-        """"<Chemical Name>, Used in: <comma-separated product names>" (or
-        "nothing yet") for `name` -- the "what is this good for" blurb
-        every chemical-picking screen shows below its list (purify bench's
-        crude-product picker, the notebook's Active/Known Reactions and
-        Inventory-Reagents views), built once here so they all read as one
-        sentence instead of each screen wording it slightly differently."""
+        """"<Chemical Name> (Pure|Crude). Used in: <comma-separated product
+        names>" (or "nothing yet") for `name` -- the "what is this good
+        for" blurb every chemical-picking screen shows below its list
+        (purify bench's crude-product picker, the notebook's Active/Known
+        Reactions and Inventory-Reagents views), built once here so they
+        all read as one sentence instead of each screen wording it
+        slightly differently.
+
+        A crude name can't actually be fed into a reaction as-is (see
+        start_reaction's inventory.has_moles check, which resolves through
+        the pure name only) -- so the verb changes to "After purifying,
+        can be used in" rather than implying it's ready to use right now."""
         species = inventory.species_for(name)
         pure_name = species.name  # crude's species entry is shared with its pure form
         products = self.products_using(pure_name)
@@ -256,7 +262,9 @@ class ReactionEngine:
             used_in = ", ".join(labels)
         else:
             used_in = "nothing yet"
-        return f"{species.name.title()}, Used in: {used_in}"
+        if is_crude(name):
+            return f"{species.name.title()} (Crude). After purifying, can be used in: {used_in}."
+        return f"{species.name.title()} (Pure). Used in: {used_in}."
 
     def find_match(self, reagents: dict[str, float]) -> tuple[str, ReactionDefinition] | None:
         """

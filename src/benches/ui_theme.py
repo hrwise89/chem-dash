@@ -597,6 +597,23 @@ def draw_status_bar(text_pool: TextPool, time_str: str, money_str: str, date_str
 MESSAGE_FONT_SIZE = 11
 MESSAGE_MAX_WIDTH = SCREEN_WIDTH - 80
 
+# A reminder is a short-lived warning drawn directly over the status bar
+# (rather than down at MESSAGE_Y like an ordinary show_message) -- for
+# nudging the player about something they're about to do wrong on a
+# picker screen (e.g. about to pick a vessel that's limited by a reagent
+# they only have the crude form of) without blocking input the way a
+# modal would. It fades out over its last REMINDER_FADE_SECONDS rather
+# than just vanishing, since it's covering the status bar and popping
+# that back into view abruptly would be more jarring than a message
+# disappearing from empty space at the bottom of the screen.
+REMINDER_DURATION = 2.5
+REMINDER_FADE_SECONDS = 0.6
+REMINDER_FONT_SIZE = 10
+REMINDER_LINE_HEIGHT = 16
+REMINDER_MAX_LINES = 2
+REMINDER_MAX_WIDTH = STATUS_PANEL.width - 40
+REMINDER_COLOR = arcade.color.DARK_YELLOW
+
 
 class ThemedBenchView(arcade.View):
 
@@ -608,6 +625,8 @@ class ThemedBenchView(arcade.View):
         self.message = ""
         self.message_color = PANEL_COLOR
         self.message_timer = 0.0
+        self.reminder_lines: list[str] = []
+        self.reminder_timer = 0.0
 
     def on_show_view(self):
         # arcade.set_background_color() is global window state, not
@@ -643,6 +662,25 @@ class ThemedBenchView(arcade.View):
             self.message_timer -= delta_time
             if self.message_timer <= 0:
                 self.message = ""
+        if self.reminder_timer > 0:
+            self.reminder_timer -= delta_time
+            if self.reminder_timer <= 0:
+                self.reminder_lines = []
+
+    def show_reminder(self, text: str, duration: float = REMINDER_DURATION):
+        """A one-off nudge drawn over the status bar for `duration`
+        seconds, then faded out -- see REMINDER_DURATION's comment above
+        for why this exists as its own thing rather than reusing
+        show_message. Word-wrapped (not truncated) onto up to
+        REMINDER_MAX_LINES lines, since the status bar is narrow enough at
+        REMINDER_FONT_SIZE that a single-line message of any real length
+        would otherwise lose its ending to "...". Calling this again while
+        one is already showing just restarts the clock with the new text."""
+        probe = self.text_pool.get("reminder_probe", "", 0, 0, REMINDER_COLOR,
+                                    font_size=REMINDER_FONT_SIZE, font_name=FONT_STACK)
+        self.reminder_lines = wrap_and_fit(probe, text, REMINDER_MAX_WIDTH, REMINDER_MAX_LINES,
+                                            font_size=REMINDER_FONT_SIZE)
+        self.reminder_timer = duration
 
     def show_message(self, text: str, color=PANEL_COLOR, duration: float = MESSAGE_DURATION):
         """Truncates `text` to one line, once, right here -- a message is
@@ -657,6 +695,26 @@ class ThemedBenchView(arcade.View):
 
     def draw_status_bar(self, time_str: str, money_str: str, date_str: str):
         draw_status_bar(self.text_pool, time_str, money_str, date_str)
+        if self.reminder_lines:
+            self._draw_reminder()
+
+    def _draw_reminder(self):
+        """Redraws STATUS_PANEL's own rect on top of what draw_status_bar
+        just drew, with the reminder's (already-wrapped) lines centered in
+        place of the time/money/date -- fading (panel and text alpha
+        together) once reminder_timer drops under REMINDER_FADE_SECONDS."""
+        alpha = 255 if self.reminder_timer > REMINDER_FADE_SECONDS \
+            else max(0, round(255 * self.reminder_timer / REMINDER_FADE_SECONDS))
+        panel_color = (*PANEL_COLOR[:3], alpha)
+        bg_color = (*PANEL_BG_COLOR[:3], alpha)
+        text_color = (*REMINDER_COLOR[:3], alpha)
+        draw_panel(STATUS_PANEL, color=panel_color, bg_color=bg_color, radius=STATUS_PANEL.height / 2)
+        lines = self.reminder_lines
+        top_y = STATUS_PANEL.center_y + REMINDER_LINE_HEIGHT * (len(lines) - 1) / 2
+        for i, line in enumerate(lines):
+            self.text_pool.get(f"reminder_{i}", line, STATUS_PANEL.center_x, top_y - i * REMINDER_LINE_HEIGHT,
+                                text_color, font_size=REMINDER_FONT_SIZE, font_name=FONT_STACK,
+                                anchor_x="center", anchor_y="center").draw()
 
     def draw_message(self):
         if not self.message:

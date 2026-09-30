@@ -38,7 +38,7 @@ from benches.ui_theme import (
 )
 from day_manager import calendar_date_string, clock_time_string
 from devtools import logger
-from inventory import EquipmentUnavailableError
+from inventory import EquipmentUnavailableError, crude_name_for, is_crude
 from reaction_engine import reaction_scale_bounds, reagents_for_scale, reference_reagent_for
 from sprites import texture_for
 from units import format_moles
@@ -482,8 +482,10 @@ class ReactionBenchView(ThemedBenchView):
             return
         if key == arcade.key.RIGHT:
             definition = recipes[self.recipe_section.cursor] if recipes else None
-            if self._vessel_choices_for(definition):
+            rows = self._vessel_choices_for(definition)
+            if rows:
                 self.pick_focus = "vessel"
+                self._maybe_show_crude_reminder(definition, rows[min(self.vessel_cursor, len(rows) - 1)][1])
             return
 
         if self.pick_focus == "recipe":
@@ -497,8 +499,10 @@ class ReactionBenchView(ThemedBenchView):
                 self.vessel_cursor = 0
             elif key == arcade.key.ENTER:
                 definition = recipes[self.recipe_section.cursor]
-                if self._vessel_choices_for(definition):
+                rows = self._vessel_choices_for(definition)
+                if rows:
                     self.pick_focus = "vessel"
+                    self._maybe_show_crude_reminder(definition, rows[min(self.vessel_cursor, len(rows) - 1)][1])
             return
 
         definition = recipes[self.recipe_section.cursor] if recipes else None
@@ -507,11 +511,34 @@ class ReactionBenchView(ThemedBenchView):
             return
         if key in (arcade.key.UP, arcade.key.W):
             self.vessel_cursor = (self.vessel_cursor - 1) % len(rows)
+            self._maybe_show_crude_reminder(definition, rows[self.vessel_cursor][1])
         elif key in (arcade.key.DOWN, arcade.key.S):
             self.vessel_cursor = (self.vessel_cursor + 1) % len(rows)
+            self._maybe_show_crude_reminder(definition, rows[self.vessel_cursor][1])
         elif key == arcade.key.ENTER:
             _, vessel = rows[self.vessel_cursor]
             self._choose_vessel(definition, vessel)
+
+    def _maybe_show_crude_reminder(self, definition, vessel):
+        """If `vessel` would currently limit `definition` by a specific
+        reagent (rather than the vessel's own size) and the player is
+        holding some crude form of that reagent, remind them it can't
+        actually be used -- resolve_supplier never treats a crude name as
+        a supplier for its pure identity (see inventory.py), so the picker
+        would otherwise just silently cap the batch smaller than the
+        crude pile on the shelf suggests it should. Shown once per vessel-
+        focus/selection change (see _handle_pick_keys), not every frame."""
+        if definition is None or vessel is None:
+            return
+        bounds = reaction_scale_bounds(definition, self.window.chemical_inventory, vessel.capacity)
+        if bounds is None:
+            return
+        _, _, limiting_factor = bounds
+        if limiting_factor == "vessel":
+            return
+        crude_amount = self.window.chemical_inventory.contents.get(crude_name_for(limiting_factor), 0.0)
+        if crude_amount > 0:
+            self.show_reminder("Reminder: You can't use crude (C) reagents to start a reaction.")
 
     def _choose_vessel(self, definition, vessel):
         bounds = reaction_scale_bounds(definition, self.window.chemical_inventory, vessel.capacity)
@@ -595,18 +622,35 @@ class ReactionBenchView(ThemedBenchView):
             else:
                 self.slider_value = max(self.slider_value - step, floor)
 
-    def _on_hand_native_desc(self, name: str) -> str:
-        """How much of `name` (resolved through whatever inventory entry
-        actually supplies it) is currently on hand, in its native unit --
-        "0" if nothing does, rather than raising."""
+    def _on_hand_desc(self, name: str) -> str:
+        """How much of `name` is currently on hand -- moles and native
+        units, via whatever inventory entry actually supplies it (a
+        solution's own stock, e.g. "48% hydrobromic acid" for HBr) -- plus,
+        if a crude form of the same substance is separately held (e.g.
+        "sodium cyanide (crude)" sitting unused while some pure stock also
+        exists), how much of that too. A crude reagent can't itself supply
+        a reaction (resolve_supplier only matches a pure name or a
+        solution's solute), so without this it would look like the player
+        has none at all rather than "some, but it needs purifying first"."""
         inventory = self.window.chemical_inventory
         supplier = inventory.resolve_supplier(name) or name
         amount = inventory.contents.get(supplier, 0.0)
         try:
             species = inventory.species_for(supplier)
+            desc = f"{format_moles(amount * species.moles_per_unit())}, {amount:.1f} {species.unit_label()}"
         except KeyError:
-            return "0"
-        return f"{amount:.1f} {species.unit_label()}"
+            desc = "0"
+
+        if not is_crude(name):
+            crude_key = crude_name_for(name)
+            crude_amount = inventory.contents.get(crude_key, 0.0)
+            if crude_amount > 0:
+                try:
+                    crude_unit = inventory.species_for(crude_key).unit_label()
+                    desc += f", ({crude_amount:.1f} {crude_unit} crude)"
+                except KeyError:
+                    pass
+        return desc
 
     def _item_lines(self, name: str, moles: float, limiting: bool, show_on_hand: bool = False) -> list[str]:
         """Two lines for one reagent/product row: short name, moles, and
@@ -614,7 +658,7 @@ class ReactionBenchView(ThemedBenchView):
         if requested, how much is currently on hand) in parentheses on the
         second -- e.g.:
             HBr (aq): 0.60 mol, 68.2 mL (limiting)
-              (48% hydrobromic acid) -- have 1500.0 mL
+              (48% hydrobromic acid) -- have 13.20 mol, 1500.0 mL
         `name` is looked up through whatever inventory entry actually
         supplies it (a solution's own concentration, not some other
         unit), same as the slider's own native readout."""
@@ -628,7 +672,7 @@ class ReactionBenchView(ThemedBenchView):
         tag = " (limiting)" if limiting else ""
         row2 = f"    ({supplier})"
         if show_on_hand:
-            row2 = f"{row2} -- have {self._on_hand_native_desc(name)}"
+            row2 = f"{row2} -- have {self._on_hand_desc(name)}"
         return [
             f"  {short}: {format_moles(moles)}, {native}{tag}",
             row2,

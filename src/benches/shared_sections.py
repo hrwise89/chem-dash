@@ -21,6 +21,7 @@ from benches.ui_theme import (
     draw_description_panel, draw_icon_panel, draw_tab_bar, draw_titled_list_panel,
     truncate_to_width,
 )
+from inventory import is_crude
 from units import format_moles, format_native_amount
 
 FLASK_SPRITE_KEY = "rb_flask"  # the one generic flask/jar icon, reused everywhere there's no per-item art
@@ -211,7 +212,7 @@ class InventorySection:
     used so far (the notebook and the reaction bench alike)."""
 
     def __init__(self):
-        self.tab = 0
+        self.tab = INVENTORY_TABS.index("Reagents")  # Reagents are the default view, not Equipment
         self.cursor = 0
 
     def handle_key(self, key, window):
@@ -259,7 +260,8 @@ class InventorySection:
         rows = []
         for name in sorted(inventory.contents.keys()):
             species = inventory.species_for(name)
-            label = f"{species.display_name}: {inventory.describe(name)}"
+            tag = " (C)" if is_crude(name) else ""
+            label = f"{species.display_name}{tag}: {inventory.describe(name)}"
             description = window.reaction_engine.used_in_summary(inventory, name)
             rows.append((label, description, FLASK_SPRITE_KEY))
         return rows

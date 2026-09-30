@@ -146,9 +146,14 @@ class TestReactionsSectionSelectable(unittest.TestCase):
 
 class TestInventorySection(unittest.TestCase):
 
+    def test_reagents_is_the_default_tab(self):
+        section = InventorySection()
+        self.assertEqual(INVENTORY_TABS[section.tab], "Reagents")
+
     def test_tab_switch_cycles_through_all_three_and_resets_cursor(self):
         section = InventorySection()
         window = _make_window()
+        section.tab = 0
         section.cursor = 2
         self.assertEqual(len(INVENTORY_TABS), 3)
         section.handle_key(arcade.key.LEFT, window)  # wraps backward to the last tab

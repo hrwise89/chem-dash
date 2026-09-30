@@ -50,18 +50,18 @@ class TestNotebookToggle(unittest.TestCase):
         notebook.cursor_index = _index_of("inventory")
         notebook.handle_key(arcade.key.ENTER, window)
         self.assertEqual(notebook.section, "inventory")
-        notebook.handle_key(arcade.key.RIGHT, window)  # switch to "Reagents" tab
-        self.assertEqual(notebook.inventory.tab, 1)
+        notebook.handle_key(arcade.key.RIGHT, window)  # Reagents (default) -> "Consumables" tab
+        self.assertEqual(notebook.inventory.tab, 2)
 
         notebook.toggle()  # close via N
         self.assertFalse(notebook.is_open)
         self.assertEqual(notebook.section, "inventory")
-        self.assertEqual(notebook.inventory.tab, 1)
+        self.assertEqual(notebook.inventory.tab, 2)
 
         notebook.toggle()  # reopen via N
         self.assertTrue(notebook.is_open)
         self.assertEqual(notebook.section, "inventory")
-        self.assertEqual(notebook.inventory.tab, 1)
+        self.assertEqual(notebook.inventory.tab, 2)
 
 
 class TestGridNavigation(unittest.TestCase):
