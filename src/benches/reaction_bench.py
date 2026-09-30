@@ -105,9 +105,12 @@ VALUE_Y = 400
 WARNING_FONT_SIZE = 9
 WARNING_Y = 368
 WARNING_Y2 = 352
-PREVIEW_PANEL = Panel(left=40, right=760, bottom=120, top=320)
-PREVIEW_LINE_HEIGHT = 20
-PREVIEW_FONT_SIZE = 10
+# Same rect/font/line-height as PICK_DESC_PANEL on the previous ("start_
+# pick") screen -- this box shows the same kind of content (reagent/
+# product lines), so there's no reason for it to be laid out differently.
+PREVIEW_PANEL = PICK_DESC_PANEL
+PREVIEW_LINE_HEIGHT = PICK_DESC_LINE_HEIGHT
+PREVIEW_FONT_SIZE = PICK_DESC_FONT_SIZE
 
 
 class ReactionBenchView(ThemedBenchView):
@@ -340,11 +343,10 @@ class ReactionBenchView(ThemedBenchView):
                                             font_size=PREVIEW_FONT_SIZE, font_name=FONT_STACK)
         max_width = PREVIEW_PANEL.width - 24
         y = PREVIEW_PANEL.top - PREVIEW_LINE_HEIGHT
-        for i, line in enumerate(self._preview_lines()):
+        for i, line in enumerate(self._preview_lines(preview_probe, max_width, PREVIEW_FONT_SIZE)):
             if line == "":
                 y -= PREVIEW_LINE_HEIGHT / 2
                 continue
-            line = truncate_to_width(preview_probe, line, max_width)
             self.text_pool.get(f"preview_{i}", line, PREVIEW_PANEL.left + 12, y, PANEL_COLOR,
                                 font_size=PREVIEW_FONT_SIZE, font_name=FONT_STACK,
                                 anchor_x="left", anchor_y="center").draw()
@@ -439,32 +441,32 @@ class ReactionBenchView(ThemedBenchView):
         _, max_moles, limiting_factor = bounds
         reagents = reagents_for_scale(definition, max_moles)
 
-        data_lines = ["Reagents consumed:"]
-        for name, moles in reagents.items():
-            data_lines.extend(self._item_lines(name, moles, name == limiting_factor, show_on_hand=True))
+        draw_panel(PICK_DESC_PANEL)
+        probe = self.text_pool.get("pick_desc_probe", "", 0, 0, PANEL_COLOR,
+                                    font_size=PICK_DESC_FONT_SIZE, font_name=FONT_STACK)
+        max_width = PICK_DESC_PANEL.width - 24
 
-        data_lines.append("")
-        data_lines.append("Product(s) (theoretical):")
+        if limiting_factor == "vessel":
+            header = "Limited by Vessel Size"
+        else:
+            header = f"Limited by {self._short_name(limiting_factor)} ({max_moles:.2f} mol)"
+        header = truncate_to_width(probe, header, max_width)
+
+        lines = [header, "Reagents Consumed At Maximum Scale:"]
+        for name, moles in reagents.items():
+            lines.extend(self._item_lines(name, moles, name == limiting_factor, probe, max_width,
+                                           PICK_DESC_FONT_SIZE, show_on_hand=True))
+
+        lines.append("")
+        lines.append("Product(s) (theoretical):")
         ref = reference_reagent_for(definition)
         ref_coeff = definition.reactants[ref]
         scale = max_moles / ref_coeff if ref_coeff else 0.0
         for product, stoich in definition.products.items():
             moles = stoich * scale
-            data_lines.extend(self._item_lines(product, moles, limiting=False, show_on_hand=True))
+            lines.extend(self._item_lines(product, moles, limiting=False, probe=probe, max_width=max_width,
+                                           font_size=PICK_DESC_FONT_SIZE, show_on_hand=True))
 
-        draw_panel(PICK_DESC_PANEL)
-        probe = self.text_pool.get("pick_desc_probe", "", 0, 0, PANEL_COLOR,
-                                    font_size=PICK_DESC_FONT_SIZE, font_name=FONT_STACK)
-        max_width = PICK_DESC_PANEL.width - 24
-        # The header, unlike every data row below it, isn't a single fixed-
-        # format value -- it's a sentence, and it's the first line rather
-        # than the last, so word-wrapping it (onto as many lines as it
-        # takes) reads far better than truncating it with "..." the same
-        # way a too-long data row would be.
-        header = f"{item.name} at max scale ({max_moles:.2f} mol, limited by {limiting_factor}):"
-        header_lines = wrap_and_fit(probe, header, max_width, max_lines=3, font_size=PICK_DESC_FONT_SIZE)
-        data_lines = [truncate_to_width(probe, line, max_width) for line in data_lines]
-        lines = header_lines + data_lines
         draw_wrapped_lines(PICK_DESC_PANEL, self.text_pool, "pick_desc", lines,
                             PICK_DESC_LINE_HEIGHT, font_size=PICK_DESC_FONT_SIZE)
 
@@ -652,33 +654,53 @@ class ReactionBenchView(ThemedBenchView):
                     pass
         return desc
 
-    def _item_lines(self, name: str, moles: float, limiting: bool, show_on_hand: bool = False) -> list[str]:
-        """Two lines for one reagent/product row: short name, moles, and
-        native amount on the first; the full (unabbreviated) name (plus,
-        if requested, how much is currently on hand) in parentheses on the
-        second -- e.g.:
+    def _short_name(self, name: str) -> str:
+        """`name`'s short display name via whatever inventory entry
+        actually supplies it, falling back to `name` itself if nothing
+        does or the species catalog doesn't know it."""
+        inventory = self.window.chemical_inventory
+        supplier = inventory.resolve_supplier(name) or name
+        try:
+            return inventory.species_for(supplier).display_name
+        except KeyError:
+            return name
+
+    def _item_lines(self, name: str, moles: float, limiting: bool, probe: arcade.Text, max_width: float,
+                     font_size: int, show_on_hand: bool = False) -> list[str]:
+        """Lines for one reagent/product row: short name, moles, and native
+        amount on the first (truncated, like any other fixed-format
+        value); the full (unabbreviated) name (plus, if requested, how
+        much is currently on hand) in parentheses, word-wrapped onto
+        however many lines it takes, after that -- e.g.:
             HBr (aq): 0.60 mol, 68.2 mL (limiting)
               (48% hydrobromic acid) -- have 13.20 mol, 1500.0 mL
         `name` is looked up through whatever inventory entry actually
         supplies it (a solution's own concentration, not some other
-        unit), same as the slider's own native readout."""
+        unit), same as the slider's own native readout. `probe`/
+        `max_width`/`font_size` are the caller's own (already-positioned)
+        measuring text and panel width -- the on-hand line (with the
+        crude-amount aside _on_hand_desc can add) is the one most likely
+        to run long, so it wraps rather than losing its ending to "..."."""
         inventory = self.window.chemical_inventory
         supplier = inventory.resolve_supplier(name) or name
-        try:
-            short = inventory.species_for(supplier).display_name
-        except KeyError:
-            short = name
+        short = self._short_name(name)
         native = self._native_amount_desc(name, moles)
         tag = " (limiting)" if limiting else ""
-        row2 = f"    ({supplier})"
-        if show_on_hand:
-            row2 = f"{row2} -- have {self._on_hand_desc(name)}"
-        return [
-            f"  {short}: {format_moles(moles)}, {native}{tag}",
-            row2,
-        ]
+        row1 = truncate_to_width(probe, f"  {short}: {format_moles(moles)}, {native}{tag}", max_width)
 
-    def _preview_lines(self) -> list[str]:
+        row2_body = f"({supplier})"
+        if show_on_hand:
+            row2_body = f"{row2_body} -- have {self._on_hand_desc(name)}"
+        # Wrapped separately from its "    " indent (wrap_to_width strips
+        # leading whitespace off whatever it wraps, via str.strip() on each
+        # candidate line -- see ui_common.wrap_to_width), then reapplied to
+        # every resulting line so a wrapped continuation still reads as
+        # part of the same indented sub-row, not a new top-level one.
+        row2_lines = [f"    {line}" for line in wrap_and_fit(probe, row2_body, max_width, max_lines=2,
+                                                               font_size=font_size)]
+        return [row1] + row2_lines
+
+    def _preview_lines(self, probe: arcade.Text, max_width: float, font_size: int) -> list[str]:
         """Reagent amounts (moles + native units, naming whichever actual
         inventory item supplies each one, with the limiting reagent
         flagged, and how much is on hand) and theoretical (100%
@@ -689,7 +711,8 @@ class ReactionBenchView(ThemedBenchView):
 
         lines = ["Reagents consumed:"]
         for name, moles in reagents.items():
-            lines.extend(self._item_lines(name, moles, name == self.pending_limiting_factor, show_on_hand=True))
+            lines.extend(self._item_lines(name, moles, name == self.pending_limiting_factor, probe, max_width,
+                                           font_size, show_on_hand=True))
 
         lines.append("")
         lines.append("Product(s) (theoretical):")
@@ -698,7 +721,8 @@ class ReactionBenchView(ThemedBenchView):
         scale = self.slider_value / ref_coeff if ref_coeff else 0.0
         for product, stoich in definition.products.items():
             moles = stoich * scale
-            lines.extend(self._item_lines(product, moles, limiting=False, show_on_hand=True))
+            lines.extend(self._item_lines(product, moles, limiting=False, probe=probe, max_width=max_width,
+                                           font_size=font_size, show_on_hand=True))
         return lines
 
     def _handle_amount_keys(self, key):

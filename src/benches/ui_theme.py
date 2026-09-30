@@ -606,7 +606,7 @@ MESSAGE_MAX_WIDTH = SCREEN_WIDTH - 80
 # than just vanishing, since it's covering the status bar and popping
 # that back into view abruptly would be more jarring than a message
 # disappearing from empty space at the bottom of the screen.
-REMINDER_DURATION = 2.5
+REMINDER_DURATION = 3.0
 REMINDER_FADE_SECONDS = 0.6
 REMINDER_FONT_SIZE = 10
 REMINDER_LINE_HEIGHT = 16
