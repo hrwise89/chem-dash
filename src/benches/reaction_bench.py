@@ -34,7 +34,7 @@ from benches.ui_common import check_pass_out
 from benches.ui_theme import (
     CP437_CURSOR, DIM_COLOR, FONT_STACK, PANEL_COLOR, Panel, ThemedBenchView,
     draw_description_panel, draw_panel, draw_single_sprite, draw_slider, draw_titled_list_panel,
-    truncate_to_width,
+    draw_wrapped_lines, truncate_to_width,
 )
 from day_manager import calendar_date_string, clock_time_string
 from devtools import logger
@@ -86,10 +86,12 @@ FLASK_ICON_MAX_SHOWN = 8
 # screen with mostly empty space around a short list ----
 PICK_ROW_HEIGHT = 22
 PICK_LIST_FONT_SIZE = 10
-RECIPE_PANEL = Panel(left=40, right=390, bottom=260, top=520)
-VESSEL_PANEL = Panel(left=410, right=760, bottom=260, top=520)
-PICK_EQUATION_Y = 225
-PICK_DESC_PANEL = Panel(left=40, right=760, bottom=90, top=200)
+RECIPE_PANEL = Panel(left=40, right=390, bottom=290, top=520)
+VESSEL_PANEL = Panel(left=410, right=760, bottom=290, top=520)
+PICK_EQUATION_Y = 260
+PICK_DESC_PANEL = Panel(left=40, right=760, bottom=50, top=235)
+PICK_DESC_FONT_SIZE = 10
+PICK_DESC_LINE_HEIGHT = 18
 
 # ---- "start_amount": one slider, held-repeat identical to purify_bench.
 # py's own (see that module's HOLD_REPEAT_DELAY/HOLD_TRAVERSAL_SECONDS) ----
@@ -286,11 +288,12 @@ class ReactionBenchView(ThemedBenchView):
                                 anchor_x="center", anchor_y="center").draw()
             if self.pick_focus == "vessel" and vessel_choices:
                 _, vessel = vessel_choices[self.vessel_cursor]
-                description = self._vessel_preview_for(definition, vessel)
+                self._draw_vessel_preview(definition, vessel)
             else:
                 product_name = next(iter(definition.products))
                 description = window.reaction_engine.used_in_summary(inventory, product_name)
-            draw_description_panel(PICK_DESC_PANEL, self.text_pool, "pick_desc", description, font_size=10)
+                draw_description_panel(PICK_DESC_PANEL, self.text_pool, "pick_desc", description,
+                                        font_size=PICK_DESC_FONT_SIZE)
         else:
             draw_panel(PICK_DESC_PANEL)
 
@@ -406,20 +409,45 @@ class ReactionBenchView(ThemedBenchView):
             return []
         return [(item.name, item) for item in self.window.equipment_inventory.available_items("rb_flask")]
 
-    def _vessel_preview_for(self, definition, item) -> str:
-        """The max reaction scale `item` would allow for `definition` (see
-        reaction_scale_bounds), in the same "<name>: max X mol Y (native,
-        limited by Z)" shape the old single-column vessel list used to
-        show right in its row -- shown in the description panel now that
-        there's room for it there instead."""
+    def _draw_vessel_preview(self, definition, item):
+        """What running `definition` at `item`'s max scale would actually
+        take and make: max consumed per reagent, theoretical yield per
+        product, and how much of each is currently on hand -- so the
+        player can compare vessels/recipes without having to go start one
+        to find out. Drawn as discrete lines (like the amount screen's own
+        preview), not wrapped prose, since it's tabular data."""
         inventory = self.window.chemical_inventory
-        ref = reference_reagent_for(definition)
         bounds = reaction_scale_bounds(definition, inventory, item.capacity)
         if bounds is None:
-            return f"{item.name}: no chemicals on hand for this reaction."
+            draw_panel(PICK_DESC_PANEL)
+            draw_wrapped_lines(PICK_DESC_PANEL, self.text_pool, "pick_desc",
+                                [f"{item.name}: no chemicals on hand for this reaction."],
+                                PICK_DESC_LINE_HEIGHT, font_size=PICK_DESC_FONT_SIZE)
+            return
         _, max_moles, limiting_factor = bounds
-        native = self._native_amount_desc(ref, max_moles)
-        return f"{item.name}: max {max_moles:.2f} mol {ref} ({native}), limited by {limiting_factor}."
+        reagents = reagents_for_scale(definition, max_moles)
+
+        lines = [f"{item.name} at max scale ({max_moles:.2f} mol, limited by {limiting_factor}):",
+                 "Reagents consumed:"]
+        for name, moles in reagents.items():
+            lines.extend(self._item_lines(name, moles, name == limiting_factor, show_on_hand=True))
+
+        lines.append("")
+        lines.append("Product(s) (theoretical):")
+        ref = reference_reagent_for(definition)
+        ref_coeff = definition.reactants[ref]
+        scale = max_moles / ref_coeff if ref_coeff else 0.0
+        for product, stoich in definition.products.items():
+            moles = stoich * scale
+            lines.extend(self._item_lines(product, moles, limiting=False, show_on_hand=True))
+
+        draw_panel(PICK_DESC_PANEL)
+        probe = self.text_pool.get("pick_desc_probe", "", 0, 0, PANEL_COLOR,
+                                    font_size=PICK_DESC_FONT_SIZE, font_name=FONT_STACK)
+        max_width = PICK_DESC_PANEL.width - 24
+        lines = [truncate_to_width(probe, line, max_width) for line in lines]
+        draw_wrapped_lines(PICK_DESC_PANEL, self.text_pool, "pick_desc", lines,
+                            PICK_DESC_LINE_HEIGHT, font_size=PICK_DESC_FONT_SIZE)
 
     def _handle_pick_keys(self, key):
         if key == arcade.key.ESCAPE:
@@ -448,6 +476,10 @@ class ReactionBenchView(ThemedBenchView):
             elif key in (arcade.key.DOWN, arcade.key.S):
                 self.recipe_section.cursor = (self.recipe_section.cursor + 1) % len(recipes)
                 self.vessel_cursor = 0
+            elif key == arcade.key.ENTER:
+                definition = recipes[self.recipe_section.cursor]
+                if self._vessel_choices_for(definition):
+                    self.pick_focus = "vessel"
             return
 
         definition = recipes[self.recipe_section.cursor] if recipes else None
@@ -472,6 +504,25 @@ class ReactionBenchView(ThemedBenchView):
         self.pending_min_moles, self.pending_max_moles, self.pending_limiting_factor = bounds
         self._init_slider_value()
         self.stage = "start_amount"
+
+    def dev_prime(self, stage: str):
+        """Populates whatever pending_* state `stage` needs to draw at all,
+        for dev/menu_lab.py jumping straight to it -- "start_amount" only
+        exists once a recipe and vessel have actually been picked in the
+        normal flow, so jumping there cold would draw against a None
+        pending_definition. Auto-picks the first known recipe and first
+        free vessel that actually has enough chemicals on hand; a no-op
+        for every other stage (they don't need anything pre-filled)."""
+        if stage != "start_amount":
+            return
+        recipes = self.recipe_section.items(self.window)
+        for definition in recipes:
+            vessels = self._vessel_choices_for(definition)
+            for _, vessel in vessels:
+                bounds = reaction_scale_bounds(definition, self.window.chemical_inventory, vessel.capacity)
+                if bounds is not None:
+                    self._choose_vessel(definition, vessel)
+                    return
 
     # ---- amount screen ----
 
@@ -525,12 +576,26 @@ class ReactionBenchView(ThemedBenchView):
             else:
                 self.slider_value = max(self.slider_value - step, floor)
 
-    def _item_lines(self, name: str, moles: float, limiting: bool) -> list[str]:
+    def _on_hand_native_desc(self, name: str) -> str:
+        """How much of `name` (resolved through whatever inventory entry
+        actually supplies it) is currently on hand, in its native unit --
+        "0" if nothing does, rather than raising."""
+        inventory = self.window.chemical_inventory
+        supplier = inventory.resolve_supplier(name) or name
+        amount = inventory.contents.get(supplier, 0.0)
+        try:
+            species = inventory.species_for(supplier)
+        except KeyError:
+            return "0"
+        return f"{amount:.1f} {species.unit_label()}"
+
+    def _item_lines(self, name: str, moles: float, limiting: bool, show_on_hand: bool = False) -> list[str]:
         """Two lines for one reagent/product row: short name, moles, and
-        native amount on the first; the full (unabbreviated) name in
-        parentheses on the second -- e.g.:
+        native amount on the first; the full (unabbreviated) name (plus,
+        if requested, how much is currently on hand) in parentheses on the
+        second -- e.g.:
             HBr (aq): 0.60 mol, 68.2 mL (limiting)
-              (48% hydrobromic acid)
+              (48% hydrobromic acid) -- have 1500.0 mL
         `name` is looked up through whatever inventory entry actually
         supplies it (a solution's own concentration, not some other
         unit), same as the slider's own native readout."""
@@ -542,22 +607,26 @@ class ReactionBenchView(ThemedBenchView):
             short = name
         native = self._native_amount_desc(name, moles)
         tag = " (limiting)" if limiting else ""
+        row2 = f"    ({supplier})"
+        if show_on_hand:
+            row2 = f"{row2} -- have {self._on_hand_native_desc(name)}"
         return [
             f"  {short}: {format_moles(moles)}, {native}{tag}",
-            f"    ({supplier})",
+            row2,
         ]
 
     def _preview_lines(self) -> list[str]:
         """Reagent amounts (moles + native units, naming whichever actual
         inventory item supplies each one, with the limiting reagent
-        flagged) and theoretical (100% efficiency) product yield -- the
-        "at a glance" info for whatever amount the slider is currently at."""
+        flagged, and how much is on hand) and theoretical (100%
+        efficiency) product yield -- the "at a glance" info for whatever
+        amount the slider is currently at."""
         definition = self.pending_definition
         reagents = reagents_for_scale(definition, self.slider_value)
 
-        lines = ["Reagents:"]
+        lines = ["Reagents consumed:"]
         for name, moles in reagents.items():
-            lines.extend(self._item_lines(name, moles, name == self.pending_limiting_factor))
+            lines.extend(self._item_lines(name, moles, name == self.pending_limiting_factor, show_on_hand=True))
 
         lines.append("")
         lines.append("Product(s) (theoretical):")
@@ -566,7 +635,7 @@ class ReactionBenchView(ThemedBenchView):
         scale = self.slider_value / ref_coeff if ref_coeff else 0.0
         for product, stoich in definition.products.items():
             moles = stoich * scale
-            lines.extend(self._item_lines(product, moles, limiting=False))
+            lines.extend(self._item_lines(product, moles, limiting=False, show_on_hand=True))
         return lines
 
     def _handle_amount_keys(self, key):

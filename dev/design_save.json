@@ -1,0 +1,231 @@
+{
+  "version": 1,
+  "wallet": {
+    "balance": 500.0
+  },
+  "day_manager": {
+    "current_day": 1,
+    "day_start_time": 0.0
+  },
+  "game_clock": {
+    "current_time": 3.5
+  },
+  "player_skills": {
+    "levels": {}
+  },
+  "player": {
+    "row": 5,
+    "col": 5
+  },
+  "chemical_inventory": {
+    "contents": {
+      "48% hydrobromic acid": 1972.727272727273,
+      "ethanol": 1091.6228838295388,
+      "sodium cyanide": 400.0,
+      "methanol": 809.546925566343,
+      "ethyl bromide (crude)": 40.0,
+      "ethyl bromide": 15.074626865671641
+    }
+  },
+  "consumables": {
+    "contents": {
+      "Bulk Solvent (Technical Grade, 95%)": 3000.0,
+      "Bulk Solvent (Reagent Grade, 99%)": 500.0,
+      "Silica Gel": 500.0
+    }
+  },
+  "equipment_inventory": {
+    "items": [
+      {
+        "id": "rb_flask_1",
+        "type": "rb_flask",
+        "name": "125 mL RB Flask",
+        "capacity": 125.0,
+        "in_use": false
+      },
+      {
+        "id": "rb_flask_2",
+        "type": "rb_flask",
+        "name": "250 mL RB Flask",
+        "capacity": 250.0,
+        "in_use": true
+      },
+      {
+        "id": "rb_flask_3",
+        "type": "rb_flask",
+        "name": "500 mL RB Flask",
+        "capacity": 500.0,
+        "in_use": true
+      },
+      {
+        "id": "chroma_column_micro_4",
+        "type": "chroma_column_micro",
+        "name": "Chromatography Column (Micro)",
+        "capacity": null,
+        "in_use": false
+      },
+      {
+        "id": "distill_column_bench_5",
+        "type": "distill_column_bench",
+        "name": "Distillation Column (Bench)",
+        "capacity": null,
+        "in_use": false
+      }
+    ]
+  },
+  "contract_board": {
+    "available": [
+      {
+        "contract_id": "contract_1",
+        "subject": "Need ethyl bromide",
+        "sender": "Polymer Lab",
+        "message": "Our group is starting a new alkylation series this week and we're short on ethyl bromide. Could you supply 0.5 mol? Crude is fine -- we're distilling it ourselves before use. Payment on delivery, as usual.",
+        "product": "ethyl bromide",
+        "product_short_name": "EtBr",
+        "amount": 0.5,
+        "reward": 40.0,
+        "requires_purity": false,
+        "purity": 100.0,
+        "order_type": "Synthesis",
+        "short_name": null,
+        "days_to_complete": 5,
+        "offered_at": 0.0,
+        "offered_day": 1,
+        "accept_deadline": 48.0,
+        "due_date": null,
+        "rejected_at": null,
+        "unfulfilled_recorded": false
+      }
+    ],
+    "accepted": [
+      {
+        "contract_id": "contract_2",
+        "subject": "Methyl bromide batch",
+        "sender": "Acme Labs",
+        "message": "Standard order, ship whenever ready.",
+        "product": "methyl bromide",
+        "product_short_name": "MeBr",
+        "amount": 0.3,
+        "reward": 25.0,
+        "requires_purity": false,
+        "purity": 100.0,
+        "order_type": "Synthesis",
+        "short_name": null,
+        "days_to_complete": 2,
+        "offered_at": 0.0,
+        "offered_day": 1,
+        "accept_deadline": 48.0,
+        "due_date": 72.0,
+        "rejected_at": null,
+        "unfulfilled_recorded": false
+      }
+    ],
+    "rejected": [
+      {
+        "contract_id": "contract_4",
+        "subject": "Rush acetonitrile",
+        "sender": "Quickchem",
+        "message": "Need this today if at all possible, sorry for the short notice!",
+        "product": "acetonitrile",
+        "product_short_name": "MeCN",
+        "amount": 0.4,
+        "reward": 30.0,
+        "requires_purity": false,
+        "purity": 100.0,
+        "order_type": "Synthesis",
+        "short_name": null,
+        "days_to_complete": 0,
+        "offered_at": 0.0,
+        "offered_day": 1,
+        "accept_deadline": 24.0,
+        "due_date": null,
+        "rejected_at": 0.0,
+        "unfulfilled_recorded": false
+      }
+    ],
+    "expired": [],
+    "in_transit": [
+      {
+        "contract_id": "contract_3",
+        "subject": "Pure ethyl bromide",
+        "sender": "Northgate Analytics",
+        "message": "We need this batch pure, not crude -- it's going straight into a sensitive assay.",
+        "product": "ethyl bromide",
+        "product_short_name": "EtBr",
+        "amount": 0.2,
+        "reward": 60.0,
+        "requires_purity": true,
+        "purity": 100.0,
+        "order_type": "Synthesis",
+        "short_name": null,
+        "days_to_complete": 2,
+        "offered_at": 0.0,
+        "offered_day": 1,
+        "accept_deadline": 48.0,
+        "due_date": 72.0,
+        "rejected_at": null,
+        "unfulfilled_recorded": false
+      }
+    ],
+    "history": [],
+    "sender_stats": {
+      "Northgate Analytics": {
+        "rejected_same_day": 0,
+        "rejected_next_day": 0,
+        "offer_expired": 0,
+        "offer_fulfilled": 1,
+        "offer_unfulfilled": 0
+      },
+      "Quickchem": {
+        "rejected_same_day": 1,
+        "rejected_next_day": 0,
+        "offer_expired": 0,
+        "offer_fulfilled": 0,
+        "offer_unfulfilled": 0
+      }
+    }
+  },
+  "reaction_engine": {
+    "active_processes": [
+      {
+        "process_id": "proc_1",
+        "reaction_name": "HBr + ethanol \u2192 ethyl bromide",
+        "definition": null,
+        "reagents": {
+          "HBr": 1.0,
+          "ethanol": 1.0
+        },
+        "solvent": "neat",
+        "temperature": 20,
+        "scheduled_hours": 4,
+        "start_time": 0.0,
+        "end_time": 4.0,
+        "equipment_ids": [
+          "rb_flask_2"
+        ],
+        "limiting_ratio": 1.0,
+        "condition_score": 1.0
+      },
+      {
+        "process_id": "proc_2",
+        "reaction_name": "HBr + methanol \u2192 methyl bromide",
+        "definition": null,
+        "reagents": {
+          "HBr": 1.0,
+          "methanol": 1.0
+        },
+        "solvent": "neat",
+        "temperature": 20,
+        "scheduled_hours": 3,
+        "start_time": 0.0,
+        "end_time": 3.0,
+        "equipment_ids": [
+          "rb_flask_3"
+        ],
+        "limiting_ratio": 1.0,
+        "condition_score": 1.0
+      }
+    ],
+    "history": []
+  }
+}
