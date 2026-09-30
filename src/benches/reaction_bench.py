@@ -34,7 +34,7 @@ from benches.ui_common import check_pass_out
 from benches.ui_theme import (
     CP437_CURSOR, DIM_COLOR, FONT_STACK, PANEL_COLOR, Panel, ThemedBenchView,
     draw_description_panel, draw_panel, draw_single_sprite, draw_slider, draw_titled_list_panel,
-    draw_wrapped_lines, truncate_to_width,
+    draw_wrapped_lines, truncate_to_width, wrap_and_fit,
 )
 from day_manager import calendar_date_string, clock_time_string
 from devtools import logger
@@ -427,25 +427,32 @@ class ReactionBenchView(ThemedBenchView):
         _, max_moles, limiting_factor = bounds
         reagents = reagents_for_scale(definition, max_moles)
 
-        lines = [f"{item.name} at max scale ({max_moles:.2f} mol, limited by {limiting_factor}):",
-                 "Reagents consumed:"]
+        data_lines = ["Reagents consumed:"]
         for name, moles in reagents.items():
-            lines.extend(self._item_lines(name, moles, name == limiting_factor, show_on_hand=True))
+            data_lines.extend(self._item_lines(name, moles, name == limiting_factor, show_on_hand=True))
 
-        lines.append("")
-        lines.append("Product(s) (theoretical):")
+        data_lines.append("")
+        data_lines.append("Product(s) (theoretical):")
         ref = reference_reagent_for(definition)
         ref_coeff = definition.reactants[ref]
         scale = max_moles / ref_coeff if ref_coeff else 0.0
         for product, stoich in definition.products.items():
             moles = stoich * scale
-            lines.extend(self._item_lines(product, moles, limiting=False, show_on_hand=True))
+            data_lines.extend(self._item_lines(product, moles, limiting=False, show_on_hand=True))
 
         draw_panel(PICK_DESC_PANEL)
         probe = self.text_pool.get("pick_desc_probe", "", 0, 0, PANEL_COLOR,
                                     font_size=PICK_DESC_FONT_SIZE, font_name=FONT_STACK)
         max_width = PICK_DESC_PANEL.width - 24
-        lines = [truncate_to_width(probe, line, max_width) for line in lines]
+        # The header, unlike every data row below it, isn't a single fixed-
+        # format value -- it's a sentence, and it's the first line rather
+        # than the last, so word-wrapping it (onto as many lines as it
+        # takes) reads far better than truncating it with "..." the same
+        # way a too-long data row would be.
+        header = f"{item.name} at max scale ({max_moles:.2f} mol, limited by {limiting_factor}):"
+        header_lines = wrap_and_fit(probe, header, max_width, max_lines=3, font_size=PICK_DESC_FONT_SIZE)
+        data_lines = [truncate_to_width(probe, line, max_width) for line in data_lines]
+        lines = header_lines + data_lines
         draw_wrapped_lines(PICK_DESC_PANEL, self.text_pool, "pick_desc", lines,
                             PICK_DESC_LINE_HEIGHT, font_size=PICK_DESC_FONT_SIZE)
 
