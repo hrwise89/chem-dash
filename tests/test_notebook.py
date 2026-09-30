@@ -1,14 +1,13 @@
 import os
 import sys
 import unittest
-from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import arcade
 
-from notebook import GRID_COLUMNS, GRID_ROWS, INVENTORY_TABS, ORDER_TABS, PANELS, Notebook
+from notebook import GRID_COLUMNS, GRID_ROWS, ORDER_TABS, PANELS, Notebook
 
 
 def _index_of(section_key):
@@ -52,17 +51,17 @@ class TestNotebookToggle(unittest.TestCase):
         notebook.handle_key(arcade.key.ENTER, window)
         self.assertEqual(notebook.section, "inventory")
         notebook.handle_key(arcade.key.RIGHT, window)  # switch to "Reagents" tab
-        self.assertEqual(notebook.inventory_tab, 1)
+        self.assertEqual(notebook.inventory.tab, 1)
 
         notebook.toggle()  # close via N
         self.assertFalse(notebook.is_open)
         self.assertEqual(notebook.section, "inventory")
-        self.assertEqual(notebook.inventory_tab, 1)
+        self.assertEqual(notebook.inventory.tab, 1)
 
         notebook.toggle()  # reopen via N
         self.assertTrue(notebook.is_open)
         self.assertEqual(notebook.section, "inventory")
-        self.assertEqual(notebook.inventory_tab, 1)
+        self.assertEqual(notebook.inventory.tab, 1)
 
 
 class TestGridNavigation(unittest.TestCase):
@@ -147,39 +146,22 @@ class TestEscapeBacksOutOfAnySection(unittest.TestCase):
         self.assertIsNone(notebook.section)
 
 
-class TestReactionLists(unittest.TestCase):
+class TestNotebookDelegatesToSharedSections(unittest.TestCase):
+    """Notebook.handle_key/draw just dispatch to the shared_sections.py
+    objects it owns -- see test_shared_sections.py for the sections'
+    own navigation/data behavior in isolation."""
 
-    def test_active_reactions_scroll_wraps(self):
+    def test_active_reactions_scroll_uses_the_shared_section(self):
         notebook = Notebook()
         window = _make_window()
-        window.reaction_engine.active_processes = {"p1": object(), "p2": object(), "p3": object()}
-        notebook.section = "active_reactions"
-        notebook.reactions_cursor = 0
-        notebook.handle_key(arcade.key.UP, window)
-        self.assertEqual(notebook.reactions_cursor, 2)  # wrapped to last item
-        notebook.handle_key(arcade.key.DOWN, window)
-        self.assertEqual(notebook.reactions_cursor, 0)
-
-    def test_known_reactions_scroll_uses_its_own_cursor(self):
-        notebook = Notebook()
-        window = _make_window()
-        window.reaction_engine.reaction_db = {
-            "r1": SimpleNamespace(products={"ethyl bromide": 1.0}),
-            "r2": SimpleNamespace(products={"methyl bromide": 1.0}),
-        }
-        notebook.section = "known_reactions"
-        notebook.known_reactions_cursor = 0
-        notebook.reactions_cursor = 5  # untouched -- separate state from known_reactions_cursor
-        notebook.handle_key(arcade.key.DOWN, window)
-        self.assertEqual(notebook.known_reactions_cursor, 1)
-        self.assertEqual(notebook.reactions_cursor, 5)
-
-    def test_scroll_is_a_no_op_with_no_active_reactions(self):
-        notebook = Notebook()
-        window = _make_window()
+        window.reaction_engine.active_processes = {"p1": object(), "p2": object()}
         notebook.section = "active_reactions"
         notebook.handle_key(arcade.key.DOWN, window)
-        self.assertEqual(notebook.reactions_cursor, 0)
+        self.assertEqual(notebook.active_reactions.cursor, 1)
+
+    def test_known_reactions_has_its_own_section_and_cursor(self):
+        notebook = Notebook()
+        self.assertIsNot(notebook.active_reactions, notebook.known_reactions)
 
 
 class TestOrdersSection(unittest.TestCase):
@@ -212,40 +194,6 @@ class TestOrdersSection(unittest.TestCase):
         notebook.section = "orders"
         notebook.handle_key(arcade.key.DOWN, window)
         self.assertEqual(notebook.orders_cursor, 0)
-
-
-class TestInventorySection(unittest.TestCase):
-
-    def test_tab_switch_cycles_through_all_three_and_resets_cursor(self):
-        notebook = Notebook()
-        window = _make_window()
-        notebook.section = "inventory"
-        notebook.inventory_cursor = 2
-        self.assertEqual(len(INVENTORY_TABS), 3)
-        notebook.handle_key(arcade.key.LEFT, window)  # wraps backward to the last tab
-        self.assertEqual(notebook.inventory_tab, 2)
-        self.assertEqual(notebook.inventory_cursor, 0)
-
-    def test_scroll_wraps_within_equipment_tab(self):
-        notebook = Notebook()
-        window = _make_window()
-        window.equipment_inventory.items = {
-            "a": SimpleNamespace(type="rb_flask", name="125 mL RB Flask", capacity=125.0, in_use=False),
-            "b": SimpleNamespace(type="rb_flask", name="250 mL RB Flask", capacity=250.0, in_use=False),
-        }
-        notebook.section = "inventory"
-        notebook.inventory_tab = 0  # "Equipment"
-        notebook.inventory_cursor = 0
-        notebook.handle_key(arcade.key.UP, window)
-        self.assertEqual(notebook.inventory_cursor, 1)  # wrapped to last item
-
-    def test_scroll_is_a_no_op_with_no_items_on_tab(self):
-        notebook = Notebook()
-        window = _make_window()
-        notebook.section = "inventory"
-        notebook.inventory_tab = 1  # "Reagents", empty in this window double
-        notebook.handle_key(arcade.key.DOWN, window)
-        self.assertEqual(notebook.inventory_cursor, 0)
 
 
 if __name__ == "__main__":
