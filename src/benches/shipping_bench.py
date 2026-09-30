@@ -43,9 +43,9 @@ from benches.ui_theme import (
     truncate_to_width,
     wrap_and_fit,
 )
-from day_manager import calendar_date_string, clock_time_string
+from day_manager import calendar_date_string, clock_time_string, due_date_calendar_string
 from devtools import logger
-from economy import in_transit_description, open_order_description, order_detail_line, order_summary_line
+from economy import in_transit_description, open_order_description, order_row_lines
 from settings import SCREEN_WIDTH
 
 # "In Transit" is renamed "Awaiting pickup" -- eventually this tab will
@@ -77,7 +77,7 @@ LIST_PANEL = Panel(left=40, right=760, bottom=PAGE_INDICATOR_Y - PAGE_INDICATOR_
 # Freed up by shrinking LIST_PANEL to only what it needs -- tall enough
 # for a full order message to word-wrap into, instead of being truncated
 # to one line.
-DESCRIPTION_PANEL = Panel(left=40, right=760, bottom=90, top=LIST_PANEL.bottom - 10)
+DESCRIPTION_PANEL = Panel(left=40, right=760, bottom=50, top=LIST_PANEL.bottom - 10)
 DESCRIPTION_FONT_SIZE = 10
 DESCRIPTION_LINE_HEIGHT = 20
 DESCRIPTION_MAX_LINES = max(1, int((DESCRIPTION_PANEL.height - 10) // DESCRIPTION_LINE_HEIGHT))
@@ -103,14 +103,17 @@ class ShippingBenchView(ThemedBenchView):
     # ---- row/description content (only rebuilt when it can change) ----
 
     def _entry_lines(self, contract) -> list[str]:
-        # Same row format as the contract inbox (see contract_inbox.py) --
-        # built with the same primitives/constants on purpose, so the two
-        # screens read as one system.
+        # Same "tell at a glance" row format as the notebook's own
+        # read-only Orders view (see notebook.py) -- short chemical name,
+        # (P)ure/(C)rude, amount in moles + native units, and reward on
+        # one line; sender and the real due date on the next.
         max_width = LIST_PANEL.width - 60  # leaves room for the cursor glyph + left margin
         probe = self.text_pool.get("_probe_row", "", 0, 0, PANEL_COLOR,
                                     font_size=LIST_FONT_SIZE, font_name=FONT_STACK)
-        summary = truncate_to_width(probe, order_summary_line(contract), max_width - LIST_LINE_INDENTS[0])
-        detail = truncate_to_width(probe, order_detail_line(contract), max_width - LIST_LINE_INDENTS[1])
+        due_label = due_date_calendar_string(contract.is_rush, contract.days_to_complete, contract.due_date)
+        line1, line2 = order_row_lines(contract, self.window.chemical_inventory, due_label)
+        summary = truncate_to_width(probe, line1, max_width - LIST_LINE_INDENTS[0])
+        detail = truncate_to_width(probe, line2, max_width - LIST_LINE_INDENTS[1])
         return [summary, detail]
 
     def _refresh_rows(self):

@@ -62,6 +62,24 @@ def calendar_date_string(day_number: int) -> str:
     return date.strftime("%m/%d/%Y")
 
 
+def due_date_calendar_string(is_rush: bool, days_to_complete: int | None, due_date: float | None) -> str:
+    """A contract's due date as the real calendar date it falls on
+    ("03/30/2001") rather than a relative label -- takes the raw pieces
+    (Contract.is_rush/days_to_complete/due_date) rather than a Contract
+    itself, since economy.py stays DayManager-free by design (see its own
+    module docstring) and can't hand this function one of its own
+    objects; every order-listing screen (the shipping bench, the
+    notebook's Orders view) calls this the same way instead of each
+    re-deriving the day-number-to-date conversion itself."""
+    if is_rush:
+        return "Rush"
+    if days_to_complete is None:
+        return "Open Ended"
+    if due_date is None:
+        return f"{days_to_complete}d"  # not yet accepted -- no due_date to show a date for
+    return calendar_date_string(day_number_for(due_date))
+
+
 class DayManager:
     """current_day starts at 1; day_start_time is the GameClock reading
     when the current day began."""

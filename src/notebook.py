@@ -43,8 +43,8 @@ from benches.ui_theme import (
     draw_description_panel, draw_icon_panel, draw_multiline_list, draw_page_indicator,
     draw_panel, draw_status_bar, draw_tab_bar, draw_titled_list_panel, truncate_to_width,
 )
-from day_manager import calendar_date_string, clock_time_string, day_number_for
-from economy import in_transit_description, open_order_description
+from day_manager import calendar_date_string, clock_time_string, due_date_calendar_string
+from economy import in_transit_description, open_order_description, order_row_lines
 from settings import SCREEN_HEIGHT, SCREEN_WIDTH
 from units import format_moles, format_native_amount
 
@@ -99,7 +99,7 @@ REACTION_ROW_HEIGHT = 22
 REACTION_LIST_FONT_SIZE = 10
 REACTION_INFO_FONT_SIZE = 12
 REACTION_INFO_ROW_HEIGHT = 22
-REACTION_DESC_PANEL = Panel(left=40, right=760, bottom=90, top=170)
+REACTION_DESC_PANEL = Panel(left=40, right=760, bottom=50, top=150)
 
 # ---- Orders: tabs + a 2-line-per-entry list (shipping_bench.py's own
 # Open Orders/Awaiting pickup geometry) + description, but read-only ----
@@ -113,7 +113,7 @@ ORDERS_LIST_TOP = 480
 _orders_list_content_height = ORDERS_ENTRIES_PER_PAGE * ORDERS_LIST_LINE_HEIGHT * ORDERS_LIST_LINES_PER_ENTRY
 ORDERS_PAGE_INDICATOR_Y = ORDERS_LIST_TOP - _orders_list_content_height - 24
 ORDERS_LIST_PANEL = Panel(left=40, right=760, bottom=ORDERS_PAGE_INDICATOR_Y - 12, top=ORDERS_LIST_TOP)
-ORDERS_DESC_PANEL = Panel(left=40, right=760, bottom=90, top=ORDERS_LIST_PANEL.bottom - 10)
+ORDERS_DESC_PANEL = Panel(left=40, right=760, bottom=50, top=ORDERS_LIST_PANEL.bottom - 10)
 
 # ---- Inventory: Equipment/Reagents/Consumables tabs -- catalogue_bench.
 # py's own buy-screen geometry, verbatim (same tabs, same shape of data:
@@ -149,41 +149,6 @@ def _predicted_product(process):
     product_name, stoich = next(iter(process.definition.products.items()))
     efficiency = process.definition.efficiency * process.condition_score
     return product_name, stoich * process.limiting_ratio * efficiency
-
-
-def _order_due_string(contract) -> str:
-    """A contract's due date as an actual calendar date ("03/30/2001")
-    rather than the "5d"/"Day 7" labels Contract.due_date_label shows
-    elsewhere -- economy.py stays DayManager-free (see its own docstring),
-    so this conversion (day_number_for + calendar_date_string) happens
-    here, at the one UI screen that wants the real date instead of a
-    relative label."""
-    if contract.is_rush:
-        return "Rush"
-    if contract.days_to_complete is None:
-        return "Open Ended"
-    if contract.due_date is None:
-        return f"{contract.days_to_complete}d"
-    return calendar_date_string(day_number_for(contract.due_date))
-
-
-def _order_lines(inventory, contract) -> list[str]:
-    """The notebook's own at-a-glance order row -- short chemical name,
-    (P)ure/(C)rude, moles + native amount, reward, and the real due date
-    all in two lines, so it's readable without opening the description.
-    Deliberately not shared with shipping_bench.py's own row builder
-    (economy.order_summary_line/order_detail_line): that screen is an
-    action screen built around ship-this-now, this one's a read-only
-    dashboard, and the two rows want different information front and
-    center."""
-    species = inventory.species_for(contract.product)
-    native_amount = contract.amount / species.moles_per_unit()
-    purity_tag = "P" if contract.requires_purity else "C"
-    line1 = (f"[{contract.order_type_letter}] {contract.product_short_name} ({purity_tag})   "
-             f"{format_moles(contract.amount)}, {format_native_amount(species, native_amount)}   "
-             f"${contract.reward:.2f}")
-    line2 = f"{contract.sender} - Due: {_order_due_string(contract)}"
-    return [line1, line2]
 
 
 class Notebook:
@@ -479,7 +444,8 @@ class Notebook:
 
         contracts = self._orders_items(window)
         inventory = window.chemical_inventory
-        entries = [_order_lines(inventory, c) for c in contracts]
+        entries = [order_row_lines(c, inventory, due_date_calendar_string(c.is_rush, c.days_to_complete, c.due_date))
+                   for c in contracts]
         draw_panel(ORDERS_LIST_PANEL)
         draw_multiline_list(ORDERS_LIST_PANEL, self.text_pool, "orders_list", entries, self.orders_cursor,
                              ORDERS_ENTRIES_PER_PAGE, ORDERS_LIST_LINE_HEIGHT, ORDERS_LIST_LINES_PER_ENTRY,

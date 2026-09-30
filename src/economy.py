@@ -39,6 +39,7 @@ from inventory import (
     EquipmentInventory,
     crude_name_for,
 )
+from units import format_moles, format_native_amount
 
 
 # A contract's days_to_complete: 0 is "Rush" (due the same day it's
@@ -223,15 +224,27 @@ class Contract:
         return f"Day {int(self.due_date // HOURS_PER_DAY) + 1}"
 
 
-def order_summary_line(contract: Contract) -> str:
-    """The order's list-row summary line -- shared by any screen that
-    lists orders (the shipping bench, the notebook's read-only Orders
-    view) so they read as one format."""
-    return f"[{contract.order_type_letter}] {contract.subject}"
+def order_row_lines(contract: Contract, inventory: ChemicalInventory, due_label: str) -> list[str]:
+    """The two-line "tell at a glance" list row every order-listing screen
+    shows -- the shipping bench (Open Orders/Awaiting pickup) and the
+    notebook's read-only Orders view alike: order type + the chemical's
+    short name + a (P)ure/(C)rude tag + the amount in both moles and
+    native units + the reward on one line, sender + due date on the next.
 
-
-def order_detail_line(contract: Contract) -> str:
-    return f"{contract.sender} - Due: {contract.due_date_label} - ${contract.reward:.2f}"
+    `due_label` is a pre-formatted string rather than something this
+    function derives from contract.due_date itself, since the real
+    calendar date (e.g. "03/30/2001", what every caller actually wants to
+    show) needs day_manager.due_date_calendar_string -- economy.py stays
+    DayManager-free by design (see the module docstring), so callers
+    compute it and hand it in."""
+    species = inventory.species_for(contract.product)
+    native_amount = contract.amount / species.moles_per_unit()
+    purity_tag = "P" if contract.requires_purity else "C"
+    line1 = (f"[{contract.order_type_letter}] {contract.product_short_name} ({purity_tag})   "
+             f"{format_moles(contract.amount)}, {format_native_amount(species, native_amount)}   "
+             f"${contract.reward:.2f}")
+    line2 = f"{contract.sender} - Due: {due_label}"
+    return [line1, line2]
 
 
 def order_product_desc(contract: Contract) -> str:
