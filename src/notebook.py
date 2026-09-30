@@ -43,7 +43,7 @@ from benches.ui_theme import (
     draw_panel, draw_status_bar, draw_tab_bar,
 )
 from day_manager import calendar_date_string, clock_time_string, due_date_calendar_string
-from economy import in_transit_description, open_order_description, order_row_lines
+from economy import in_transit_description, open_order_description, order_email_header, order_row_lines
 from settings import SCREEN_HEIGHT, SCREEN_WIDTH
 
 # ---- the doubled screen-edge border that's the notebook's whole visual
@@ -98,6 +98,7 @@ _orders_list_content_height = ORDERS_ENTRIES_PER_PAGE * ORDERS_LIST_LINE_HEIGHT 
 ORDERS_PAGE_INDICATOR_Y = ORDERS_LIST_TOP - _orders_list_content_height - 24
 ORDERS_LIST_PANEL = Panel(left=40, right=760, bottom=ORDERS_PAGE_INDICATOR_Y - 12, top=ORDERS_LIST_TOP)
 ORDERS_DESC_PANEL = Panel(left=40, right=760, bottom=50, top=ORDERS_LIST_PANEL.bottom - 10)
+ORDERS_DESC_FONT_SIZE = 9
 
 
 class Notebook:
@@ -258,7 +259,8 @@ class Notebook:
             _, mode = ORDER_TABS[self.orders_tab]
             description = (open_order_description(contract, window.contract_board, inventory)
                             if mode == "open_orders" else in_transit_description(contract))
-            draw_description_panel(ORDERS_DESC_PANEL, self.text_pool, "orders_desc", description)
+            draw_description_panel(ORDERS_DESC_PANEL, self.text_pool, "orders_desc", description,
+                                    font_size=ORDERS_DESC_FONT_SIZE, header_lines=order_email_header(contract))
         else:
             draw_panel(ORDERS_DESC_PANEL)
 

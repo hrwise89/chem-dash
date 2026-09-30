@@ -35,17 +35,16 @@ from benches.ui_theme import (
     PANEL_COLOR,
     Panel,
     ThemedBenchView,
+    draw_description_panel,
     draw_multiline_list,
     draw_page_indicator,
     draw_panel,
     draw_tab_bar,
-    draw_wrapped_lines,
     truncate_to_width,
-    wrap_and_fit,
 )
 from day_manager import calendar_date_string, clock_time_string, due_date_calendar_string
 from devtools import logger
-from economy import in_transit_description, open_order_description, order_row_lines
+from economy import in_transit_description, open_order_description, order_email_header, order_row_lines
 from settings import SCREEN_WIDTH
 
 # "In Transit" is renamed "Awaiting pickup" -- eventually this tab will
@@ -78,9 +77,8 @@ LIST_PANEL = Panel(left=40, right=760, bottom=PAGE_INDICATOR_Y - PAGE_INDICATOR_
 # for a full order message to word-wrap into, instead of being truncated
 # to one line.
 DESCRIPTION_PANEL = Panel(left=40, right=760, bottom=50, top=LIST_PANEL.bottom - 10)
-DESCRIPTION_FONT_SIZE = 10
-DESCRIPTION_LINE_HEIGHT = 20
-DESCRIPTION_MAX_LINES = max(1, int((DESCRIPTION_PANEL.height - 10) // DESCRIPTION_LINE_HEIGHT))
+DESCRIPTION_FONT_SIZE = 9
+DESCRIPTION_LINE_HEIGHT = 18
 
 # How long an unfillable-order error stays shown in the description panel
 # (replacing the selected order's message) before reverting to it.
@@ -95,8 +93,9 @@ class ShippingBenchView(ThemedBenchView):
         self.tab_index = 0
         self.cursor_index = 0
         self.entries = []             # [([line1, line2], contract), ...] for the current tab
-        self.description_lines = []   # the cursor-selected entry's word-wrapped full message
-        self.description_override_lines = []
+        self.description_text = ""    # the cursor-selected entry's full message
+        self.description_header = []  # its "From: .../Subject: ..." lines
+        self.description_override_text = None  # replaces the above briefly (e.g. a ship error)
         self.description_override_timer = 0.0
         self._refresh_rows()
 
@@ -125,24 +124,20 @@ class ShippingBenchView(ThemedBenchView):
 
     def _refresh_description(self):
         if not self.entries:
-            self.description_lines = []
+            self.description_text = ""
+            self.description_header = []
             return
         _, contract = self.entries[self.cursor_index]
-        text = (open_order_description(contract, self.window.contract_board, self.window.chemical_inventory)
-                if self.mode == "open_orders" else in_transit_description(contract))
-        self.description_lines = self._fit_description(text)
-
-    def _fit_description(self, text: str) -> list[str]:
-        probe = self.text_pool.get("_probe_description", "", 0, 0, PANEL_COLOR,
-                                    font_size=DESCRIPTION_FONT_SIZE, font_name=FONT_STACK)
-        max_width = DESCRIPTION_PANEL.width - 20
-        return wrap_and_fit(probe, text, max_width, DESCRIPTION_MAX_LINES, font_size=DESCRIPTION_FONT_SIZE)
+        self.description_text = (
+            open_order_description(contract, self.window.contract_board, self.window.chemical_inventory)
+            if self.mode == "open_orders" else in_transit_description(contract))
+        self.description_header = order_email_header(contract)
 
     def _show_description_override(self, text: str):
         """Briefly replaces the description panel's content with `text`
         (e.g. an unfillable-order error) instead of the selected order's
         message -- reverts on its own after DESCRIPTION_OVERRIDE_DURATION."""
-        self.description_override_lines = self._fit_description(text)
+        self.description_override_text = text
         self.description_override_timer = DESCRIPTION_OVERRIDE_DURATION
 
     # ---- drawing ----
@@ -154,7 +149,7 @@ class ShippingBenchView(ThemedBenchView):
         if self.description_override_timer > 0:
             self.description_override_timer -= delta_time
             if self.description_override_timer <= 0:
-                self.description_override_lines = []
+                self.description_override_text = None
 
     def draw_content(self):
         self.clear()
@@ -176,10 +171,14 @@ class ShippingBenchView(ThemedBenchView):
         draw_page_indicator(self.text_pool, "page", LIST_PANEL.center_x, PAGE_INDICATOR_Y,
                              self.cursor_index, len(self.entries), ENTRIES_PER_PAGE)
 
-        draw_panel(DESCRIPTION_PANEL)
-        shown_lines = self.description_override_lines or self.description_lines
-        draw_wrapped_lines(DESCRIPTION_PANEL, self.text_pool, "description", shown_lines,
-                            DESCRIPTION_LINE_HEIGHT, font_size=DESCRIPTION_FONT_SIZE)
+        if self.description_override_text is not None:
+            draw_description_panel(DESCRIPTION_PANEL, self.text_pool, "description",
+                                    self.description_override_text, font_size=DESCRIPTION_FONT_SIZE,
+                                    line_height=DESCRIPTION_LINE_HEIGHT)
+        else:
+            draw_description_panel(DESCRIPTION_PANEL, self.text_pool, "description", self.description_text,
+                                    font_size=DESCRIPTION_FONT_SIZE, line_height=DESCRIPTION_LINE_HEIGHT,
+                                    header_lines=self.description_header)
 
         # font_size=8, smaller than draw_instructions' own default -- the
         # full open-orders line runs past the screen edge at font_size=10.

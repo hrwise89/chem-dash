@@ -223,19 +223,32 @@ def draw_wrapped_lines(panel: Panel, text_pool: TextPool, key_prefix: str, lines
 
 
 def draw_description_panel(panel: Panel, text_pool: TextPool, key_prefix: str, text: str,
-                            font_size: int = 10, line_height: float | None = None, color=PANEL_COLOR):
+                            font_size: int = 10, line_height: float | None = None, color=PANEL_COLOR,
+                            header_lines: list[str] | None = None):
     """The other recurring box: a rounded panel with a single blurb of
     prose, word-wrapped and truncated to whatever fits -- e.g. purify_
     bench.py's/shipping_bench.py's description panels, and the notebook's
     (notebook.py) per-item descriptions. One call in place of hand-rolling
     a probe Text + wrap_and_fit + draw_wrapped_lines with panel-specific
-    margins/line counts each time."""
+    margins/line counts each time.
+
+    header_lines, if given, draws those lines first, as-is (truncated to
+    fit, never word-wrapped) -- the "From: .../Subject: ..." pair every
+    contract-message screen (the notebook's Orders view, the shipping
+    bench, the contract inbox) shows above the message body itself,
+    formatted like an actual email rather than folded into the wrapped
+    prose."""
     draw_panel(panel)
     line_height = line_height or font_size * 2.0
     probe = text_pool.get(f"{key_prefix}_probe", "", 0, 0, color, font_size=font_size, font_name=FONT_STACK)
-    max_lines = max(1, int((panel.height - 10) // line_height))
+    header_lines = [truncate_to_width(probe, header, panel.width - 20) for header in (header_lines or [])]
+    header_height = len(header_lines) * line_height
+    max_lines = max(1, int((panel.height - 10 - header_height) // line_height))
     lines = wrap_and_fit(probe, text, panel.width - 20, max_lines, font_size=font_size)
-    draw_wrapped_lines(panel, text_pool, key_prefix, lines, line_height, font_size=font_size, color=color)
+    draw_wrapped_lines(panel, text_pool, f"{key_prefix}_header", header_lines, line_height,
+                        font_size=font_size, color=color)
+    body_panel = Panel(panel.left, panel.right, panel.bottom, panel.top - header_height)
+    draw_wrapped_lines(body_panel, text_pool, key_prefix, lines, line_height, font_size=font_size, color=color)
 
 
 # ---- Fixed-row paged lists ----

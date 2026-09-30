@@ -247,6 +247,15 @@ def order_row_lines(contract: Contract, inventory: ChemicalInventory, due_label:
     return [line1, line2]
 
 
+def order_email_header(contract: Contract) -> list[str]:
+    """"From: .../Subject: ..." -- the two fixed header lines every
+    contract-message screen shows above the message body itself (see
+    ui_theme.draw_description_panel's header_lines), formatting an order
+    like the incoming email it's meant to read as instead of folding the
+    sender into the wrapped body text."""
+    return [f"From: {contract.sender}", f"Subject: {contract.subject}"]
+
+
 def order_product_desc(contract: Contract) -> str:
     purity_tag = " (pure)" if contract.requires_purity else ""
     return f"{contract.amount:.2f} mol {contract.product}{purity_tag}"
@@ -255,12 +264,12 @@ def order_product_desc(contract: Contract) -> str:
 def open_order_description(contract: Contract, board: "ContractBoard", inventory: ChemicalInventory) -> str:
     have = board.available_product_moles(contract, inventory)
     ready = "READY" if have + 1e-9 >= contract.amount else "not enough product yet"
-    return (f"{contract.sender}: {contract.message} (need {order_product_desc(contract)} for "
+    return (f"{contract.message} (need {order_product_desc(contract)} for "
             f"${contract.reward:.2f}) [{ready}]")
 
 
 def in_transit_description(contract: Contract) -> str:
-    return (f"{contract.sender}: {contract.message} ({order_product_desc(contract)}, "
+    return (f"{contract.message} ({order_product_desc(contract)}, "
             f"${contract.reward:.2f} arriving next morning)")
 
 

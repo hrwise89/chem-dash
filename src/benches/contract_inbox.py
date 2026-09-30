@@ -17,7 +17,6 @@ import arcade
 from benches.shipping_bench import (
     DESCRIPTION_FONT_SIZE,
     DESCRIPTION_LINE_HEIGHT,
-    DESCRIPTION_MAX_LINES,
     DESCRIPTION_PANEL,
     ENTRIES_PER_PAGE,
     LIST_FONT_SIZE,
@@ -31,16 +30,16 @@ from benches.ui_theme import (
     FONT_STACK,
     PANEL_COLOR,
     ThemedBenchView,
+    draw_description_panel,
     draw_multiline_list,
     draw_page_indicator,
     draw_panel,
     draw_tab_bar,
-    draw_wrapped_lines,
     truncate_to_width,
-    wrap_and_fit,
 )
-from day_manager import calendar_date_string, clock_time_string
+from day_manager import calendar_date_string, clock_time_string, due_date_calendar_string
 from devtools import logger
+from economy import order_email_header, order_row_lines
 from settings import SCREEN_WIDTH
 
 TABS = [("Inbox", "available"), ("Accepted", "accepted"), ("Rejected", "rejected")]
@@ -54,7 +53,8 @@ class ContractInboxView(ThemedBenchView):
         self.tab_index = 0
         self.cursor_index = 0
         self.entries = []             # [([line1, line2], contract), ...] for the current tab
-        self.description_lines = []
+        self.description_text = ""    # the cursor-selected entry's message body
+        self.description_header = []  # its "From: .../Subject: ..." lines
         self._refresh_rows()
 
     def on_show_view(self):
@@ -65,22 +65,22 @@ class ContractInboxView(ThemedBenchView):
 
     # ---- row/description content (only rebuilt when it can change) ----
 
-    def _summary_line(self, contract) -> str:
-        return f"[{contract.order_type_letter}] {contract.subject}"
-
-    def _detail_line(self, contract) -> str:
-        return f"{contract.sender} - Due: {contract.due_date_label} - ${contract.reward:.2f}"
-
     def _entry_lines(self, contract) -> list[str]:
+        # Same "tell at a glance" row format as the shipping bench/
+        # notebook's own order-listing screens -- short chemical name,
+        # (P)ure/(C)rude, amount in moles + native units, and reward on
+        # one line; sender and the real due date on the next.
         max_width = LIST_PANEL.width - 60
         probe = self.text_pool.get("_probe_row", "", 0, 0, PANEL_COLOR,
                                     font_size=LIST_FONT_SIZE, font_name=FONT_STACK)
-        summary = truncate_to_width(probe, self._summary_line(contract), max_width - LIST_LINE_INDENTS[0])
-        detail = truncate_to_width(probe, self._detail_line(contract), max_width - LIST_LINE_INDENTS[1])
+        due_label = due_date_calendar_string(contract.is_rush, contract.days_to_complete, contract.due_date)
+        line1, line2 = order_row_lines(contract, self.window.chemical_inventory, due_label)
+        summary = truncate_to_width(probe, line1, max_width - LIST_LINE_INDENTS[0])
+        detail = truncate_to_width(probe, line2, max_width - LIST_LINE_INDENTS[1])
         return [summary, detail]
 
     def _description_text(self, contract) -> str:
-        base = f"{contract.sender}: {contract.message} (${contract.reward:.2f}, due {contract.due_date_label})"
+        base = f"{contract.message} (${contract.reward:.2f})"
         if self.mode == "rejected":
             return f"{base} [rejected -- retrieve it before it expires]"
         if self.mode == "accepted" and contract.unfulfilled_recorded:
@@ -96,14 +96,12 @@ class ContractInboxView(ThemedBenchView):
 
     def _refresh_description(self):
         if not self.entries:
-            self.description_lines = []
+            self.description_text = ""
+            self.description_header = []
             return
         _, contract = self.entries[self.cursor_index]
-        probe = self.text_pool.get("_probe_description", "", 0, 0, PANEL_COLOR,
-                                    font_size=DESCRIPTION_FONT_SIZE, font_name=FONT_STACK)
-        max_width = DESCRIPTION_PANEL.width - 20
-        self.description_lines = wrap_and_fit(probe, self._description_text(contract), max_width,
-                                               DESCRIPTION_MAX_LINES, font_size=DESCRIPTION_FONT_SIZE)
+        self.description_text = self._description_text(contract)
+        self.description_header = order_email_header(contract)
 
     # ---- drawing ----
 
@@ -127,9 +125,9 @@ class ContractInboxView(ThemedBenchView):
         draw_page_indicator(self.text_pool, "page", LIST_PANEL.center_x, PAGE_INDICATOR_Y,
                              self.cursor_index, len(self.entries), ENTRIES_PER_PAGE)
 
-        draw_panel(DESCRIPTION_PANEL)
-        draw_wrapped_lines(DESCRIPTION_PANEL, self.text_pool, "description", self.description_lines,
-                            DESCRIPTION_LINE_HEIGHT, font_size=DESCRIPTION_FONT_SIZE)
+        draw_description_panel(DESCRIPTION_PANEL, self.text_pool, "description", self.description_text,
+                                font_size=DESCRIPTION_FONT_SIZE, line_height=DESCRIPTION_LINE_HEIGHT,
+                                header_lines=self.description_header)
 
         if self.mode == "available":
             instructions = "L/R: Tabs   U/D: Scroll   Enter: Accept   R: Reject   ESC: Leave"
