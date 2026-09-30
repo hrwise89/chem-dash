@@ -86,11 +86,11 @@ FLASK_ICON_MAX_SHOWN = 8
 # screen with mostly empty space around a short list ----
 PICK_ROW_HEIGHT = 22
 PICK_LIST_FONT_SIZE = 10
-RECIPE_PANEL = Panel(left=40, right=390, bottom=290, top=520)
-VESSEL_PANEL = Panel(left=410, right=760, bottom=290, top=520)
-PICK_EQUATION_Y = 260
-PICK_DESC_PANEL = Panel(left=40, right=760, bottom=50, top=235)
-PICK_DESC_FONT_SIZE = 10
+RECIPE_PANEL = Panel(left=40, right=390, bottom=350, top=520)
+VESSEL_PANEL = Panel(left=410, right=760, bottom=350, top=520)
+PICK_EQUATION_Y = 325
+PICK_DESC_PANEL = Panel(left=40, right=760, bottom=50, top=300)
+PICK_DESC_FONT_SIZE = 8
 PICK_DESC_LINE_HEIGHT = 18
 
 # ---- "start_amount": one slider, held-repeat identical to purify_bench.
