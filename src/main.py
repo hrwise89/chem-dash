@@ -8,8 +8,7 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module=r"pyglet\.media\.codecs.*")
 
 import arcade  # noqa: E402
-from settings import (SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE, SPRITE_SCALING, TILE_SIZE,  # noqa: E402
-	GRID_WIDTH, GRID_HEIGHT, PLAYER_COLOR, MAP_BACKGROUND_COLOR)
+from settings import SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE  # noqa: E402
 from benches.ui_theme import ensure_theme_font_loaded  # noqa: E402
 from lab_view import LabView  # noqa: E402
 from timer_manager import TimerManager  # noqa: E402

@@ -35,7 +35,7 @@ one module both can compose instead of each having their own copy.
 """
 import arcade
 
-from benches.shared_sections import INVENTORY_TABS, InventorySection, ReactionsSection
+from benches.shared_sections import InventorySection, ReactionsSection
 from benches.ui_common import TextPool
 from benches.ui_theme import (
     CP437_CURSOR, DIM_COLOR, FONT_STACK, INSTRUCTIONS_Y, PANEL_COLOR, Panel,

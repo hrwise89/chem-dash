@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import arcade
 
-from notebook import GRID_COLUMNS, GRID_ROWS, ORDER_TABS, PANELS, Notebook
+from notebook import GRID_COLUMNS, GRID_ROWS, PANELS, Notebook
 
 
 def _index_of(section_key):

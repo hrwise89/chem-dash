@@ -28,12 +28,7 @@ import random
 from dataclasses import dataclass, field
 
 from devtools import logger
-from inventory import (  # noqa: F401 -- re-exported
-    CRUDE_SUFFIX,
-    NotCrudeError,
-    is_crude,
-    pure_name_for,
-)
+from inventory import NotCrudeError, is_crude, pure_name_for  # noqa: F401 -- NotCrudeError/is_crude re-exported for tests
 from skills import PURIFICATION, purification_speed_multiplier
 
 SILICA_NAME = "Silica Gel"

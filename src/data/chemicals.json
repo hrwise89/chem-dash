@@ -95,5 +95,13 @@
     "density": 0.89,
     "short_name": "EtOPr",
     "description": "A fragrant ester made from propionic acid and ethanol -- prized for flavor work."
+  },
+  "ammonia": {
+    "state": "liquid",
+    "molecular_weight": 17.03,
+    "molarity": 14.8,
+    "density": 0.90,
+    "short_name": "NH3",
+    "description": "A pungent byproduct of nitrile hydrolysis -- not typically collected or sold."
   }
 }

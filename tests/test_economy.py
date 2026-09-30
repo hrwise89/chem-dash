@@ -14,7 +14,11 @@ from economy import (
     buy_chemical,
     buy_consumable,
     buy_equipment,
+    in_transit_description,
     load_contract_offers,
+    open_order_description,
+    order_email_header,
+    order_row_lines,
 )
 from inventory import (
     ChemicalInventory,
@@ -405,6 +409,68 @@ class TestLoadContractOffers(unittest.TestCase):
             self.assertGreater(contract.reward, 0)
             self.assertTrue(contract.display_name)  # every starter contract has a short_name
             self.assertIn(contract.days_to_complete, {0, 2, 5, 10, None})
+
+
+class TestOrderRowFormatting(unittest.TestCase):
+    """economy.order_email_header/order_row_lines/open_order_description/
+    in_transit_description -- the shared "tell at a glance" building
+    blocks every order-listing screen (the shipping bench, the notebook's
+    Orders view, the contract inbox) draws through."""
+
+    def setUp(self):
+        self.inventory = ChemicalInventory(species_catalog=SPECIES_CATALOG)
+        self.board = ContractBoard()
+        self.contract = self.board.offer(
+            "Need ethyl bromide", "Polymer Lab", "Could you supply some ethyl bromide?",
+            "ethyl bromide", "EtBr", 2.0, 40.0, now=0.0, day_start_time=0.0, current_day=1,
+            days_to_complete=5,
+        )
+
+    def test_email_header_has_from_and_subject_lines(self):
+        header = order_email_header(self.contract)
+        self.assertEqual(header, ["From: Polymer Lab", "Subject: Need ethyl bromide"])
+
+    def test_row_lines_first_line_has_short_name_tag_amount_and_reward(self):
+        line1, _ = order_row_lines(self.contract, self.inventory, due_label="Rush")
+        self.assertIn("EtBr", line1)
+        self.assertIn("(C)", line1)  # requires_purity defaults to False -- crude accepted
+        self.assertIn("2.000 mol", line1)
+        self.assertIn("$40.00", line1)
+
+    def test_row_lines_second_line_has_sender_and_due_label(self):
+        _, line2 = order_row_lines(self.contract, self.inventory, due_label="04/04/2001")
+        self.assertIn("Polymer Lab", line2)
+        self.assertIn("04/04/2001", line2)
+
+    def test_row_lines_tags_pure_orders_with_p_not_c(self):
+        pure_contract = self.board.offer(
+            "Need pure ethyl bromide", "Northgate", "Purity matters here.",
+            "ethyl bromide", "EtBr", 1.0, 60.0, now=0.0, day_start_time=0.0, current_day=1,
+            requires_purity=True, days_to_complete=2,
+        )
+        line1, _ = order_row_lines(pure_contract, self.inventory, due_label="2d")
+        self.assertIn("(P)", line1)
+        self.assertNotIn("(C)", line1)
+
+    def test_open_order_description_has_no_sender_prefix(self):
+        # The sender now belongs to order_email_header's "From:" line, not
+        # folded into the message body -- see the module docstring.
+        description = open_order_description(self.contract, self.board, self.inventory)
+        self.assertFalse(description.startswith("Polymer Lab"))
+        self.assertIn("Could you supply some ethyl bromide?", description)
+
+    def test_open_order_description_flags_ready_vs_not(self):
+        not_ready = open_order_description(self.contract, self.board, self.inventory)
+        self.assertIn("not enough product yet", not_ready)
+
+        self.inventory.add_moles("ethyl bromide", 5.0)
+        ready = open_order_description(self.contract, self.board, self.inventory)
+        self.assertIn("READY", ready)
+
+    def test_in_transit_description_mentions_arrival(self):
+        description = in_transit_description(self.contract)
+        self.assertIn("arriving next morning", description)
+        self.assertFalse(description.startswith("Polymer Lab"))
 
 
 if __name__ == "__main__":

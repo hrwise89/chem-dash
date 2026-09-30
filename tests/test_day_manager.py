@@ -5,11 +5,13 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from day_manager import (
+    HOURS_PER_CALENDAR_DAY,
     PASS_OUT_AFTER_HOURS,
     SLEEPY_AFTER_HOURS,
     DayManager,
     calendar_date_string,
     clock_time_string,
+    due_date_calendar_string,
 )
 from game_clock import GameClock
 
@@ -128,6 +130,22 @@ class TestCalendarDateString(unittest.TestCase):
 
     def test_crosses_month_boundary(self):
         self.assertEqual(calendar_date_string(4), "04/01/2001")
+
+
+class TestDueDateCalendarString(unittest.TestCase):
+
+    def test_rush_ignores_days_to_complete_and_due_date(self):
+        self.assertEqual(due_date_calendar_string(True, 0, 12.0), "Rush")
+
+    def test_open_ended_has_no_days_to_complete(self):
+        self.assertEqual(due_date_calendar_string(False, None, None), "Open Ended")
+
+    def test_not_yet_accepted_falls_back_to_a_relative_day_count(self):
+        self.assertEqual(due_date_calendar_string(False, 5, None), "5d")
+
+    def test_accepted_contract_shows_the_real_calendar_date(self):
+        due_date = 3 * HOURS_PER_CALENDAR_DAY  # falls within day 4
+        self.assertEqual(due_date_calendar_string(False, 2, due_date), "04/01/2001")
 
 
 if __name__ == "__main__":

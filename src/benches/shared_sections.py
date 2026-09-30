@@ -18,7 +18,7 @@ import arcade
 
 from benches.ui_theme import (
     DIM_COLOR, FONT_STACK, PANEL_COLOR, Panel,
-    draw_description_panel, draw_icon_panel, draw_panel, draw_tab_bar, draw_titled_list_panel,
+    draw_description_panel, draw_icon_panel, draw_tab_bar, draw_titled_list_panel,
     truncate_to_width,
 )
 from units import format_moles, format_native_amount

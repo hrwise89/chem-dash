@@ -65,7 +65,7 @@ def build():
     day = window.day_manager.current_day
     board = window.contract_board
 
-    available = board.offer(
+    board.offer(
         "Need ethyl bromide", "Polymer Lab",
         "Our group is starting a new alkylation series this week and we're short on ethyl bromide. "
         "Could you supply 0.5 mol? Crude is fine -- we're distilling it ourselves before use. "

@@ -564,12 +564,11 @@ def draw_icon_panel(panel: Panel, sprite_key: str, text_pool: TextPool, key: str
 
 
 # ---- Themed bench base ----
-# What BenchView (ui_common.py) is for the old flat-rectangle chrome, this
-# is for the new one: background color, the status pill (time/money/date),
-# and a status-message toast -- the handful of things every bench built
-# with this theme needs regardless of what it otherwise shows. A bench
-# still owns its own mode/state machine and draws its own panels/tabs/
-# lists through the primitives above.
+# The base every bench view now builds on: background color, the status
+# pill (time/money/date), and a status-message toast -- the handful of
+# things every bench built with this theme needs regardless of what it
+# otherwise shows. A bench still owns its own mode/state machine and draws
+# its own panels/tabs/lists through the primitives above.
 
 STATUS_PANEL = Panel(left=20, right=780, bottom=545, top=585)
 MESSAGE_Y = 55

@@ -1,5 +1,5 @@
 import arcade
-from settings import (SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE, SPRITE_SCALING, TILE_SIZE,
+from settings import (SCREEN_WIDTH, SCREEN_HEIGHT, TILE_SIZE,
 	ROOM_COLS, ROOM_ROWS, ROOM_ORIGIN_X, ROOM_ORIGIN_Y,
 	STATUS_BAR_HEIGHT, MESSAGE_BOX_HEIGHT, MAP_BACKGROUND_COLOR,
 	OUTSIDE_ROOM_COLOR, GAME_HOURS_PER_REAL_SECOND)
@@ -18,7 +18,6 @@ from room_geometry import (
 )
 from save_game import save_game
 from sprites import make_sprite
-from timer_manager import TimerManager, Timer
 from devtools import logger
 
 class LabView(arcade.View):
