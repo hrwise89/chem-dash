@@ -277,6 +277,15 @@ class ReactionBenchView(ThemedBenchView):
         definition = recipes[self.recipe_section.cursor] if recipes else None
         vessel_color = PANEL_COLOR if self.pick_focus == "vessel" else DIM_COLOR
         vessel_choices = self._vessel_choices_for(definition)
+        # The vessel list can shrink between visits (a flask gets reserved
+        # by a reaction started last time), so a cursor left over from
+        # before can point past the end of today's list -- clamp it here
+        # rather than only when the player moves it (see _handle_pick_keys),
+        # since simply re-entering this stage never touches vessel_cursor.
+        if vessel_choices:
+            self.vessel_cursor = min(self.vessel_cursor, len(vessel_choices) - 1)
+        else:
+            self.vessel_cursor = 0
         vessel_rows = [truncate_to_width(probe, label, VESSEL_PANEL.width - 40) for label, _ in vessel_choices]
         draw_titled_list_panel(VESSEL_PANEL, self.text_pool, "pick_vessel", vessel_rows, self.vessel_cursor,
                                 PICK_ROW_HEIGHT, title="-Pick a Vessel-", font_size=PICK_LIST_FONT_SIZE,
@@ -394,6 +403,9 @@ class ReactionBenchView(ThemedBenchView):
         _, target = BUTTONS[self.cursor_index]
         if target is None:
             return
+        if target == "start_pick":
+            self.pick_focus = "recipe"
+            self.vessel_cursor = 0
         self.stage = target
 
     # ---- recipe+vessel picking (one merged screen) -> amount ----
